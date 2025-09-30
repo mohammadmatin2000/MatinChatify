@@ -1,0 +1,21 @@
+# انتخاب تصویر پایه Node.js
+FROM node:20
+
+# مشخص کردن مسیر کاری داخل کانتینر
+WORKDIR /usr/src/frontend
+
+# کپی محتویات فولدر frontends به داخل کانتینر
+COPY frontend/package*.json ./
+COPY frontend/. ./
+
+# نصب dependencies
+RUN npm install
+
+# پورت پیش‌فرض React
+EXPOSE 3000
+
+ENV NODE_OPTIONS=--openssl-legacy-provider
+
+
+# اجرای پروژه در حالت توسعه
+CMD ["npm", "start"]

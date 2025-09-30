@@ -1,0 +1,38 @@
+# نسخه Django
+django==4.2
+
+# خواندن متغیرهای محیطی از فایل .env
+python-decouple
+
+# درایور PostgreSQL به همراه باینری‌های مورد نیاز
+psycopg[binary]
+
+# فریمورک REST API جنگو
+djangorestframework
+
+# JWT برای احراز هویت توکن‌محور
+djangorestframework-simplejwt
+
+# فیلتر کردن داده‌ها در APIها
+django-filter
+
+# تولید مستندات Swagger برای API
+drf-yasg
+
+# کار با تصاویر (مثلا آپلود عکس)
+Pillow
+
+# ارسال درخواست HTTP به APIهای خارجی
+requests
+
+# مدیریت CORS برای اجازه دسترسی فرانت
+django-cors-headers
+
+# اجرای Black: فرمت خودکار کدهای Python برای رعایت استاندارد PEP8
+black
+
+# اجرای Flake8: بررسی استایل و خطاهای احتمالی کدهای Python
+flake8
+
+# سرور تولید برای Django
+gunicorn
