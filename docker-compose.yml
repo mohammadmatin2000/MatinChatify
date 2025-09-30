@@ -34,17 +34,17 @@ services:
     depends_on:
       - db
 
-  frontend:
-    build:
-      context: .
-      dockerfile: ./dockerfiles/dev/django/Dockerfile-1
-    container_name: frontend
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-    stdin_open: true
-    tty: true
+#  frontend:
+#    build:
+#      context: .
+#      dockerfile: ./dockerfiles/dev/django/Dockerfile-1
+#    container_name: frontend
+#    ports:
+#      - "3000:3000"
+#    volumes:
+#      - ./frontend:/app
+#      - /app/node_modules
+#    environment:
+#      - CHOKIDAR_USEPOLLING=true
+#    stdin_open: true
+#    tty: true
