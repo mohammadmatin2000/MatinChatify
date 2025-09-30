@@ -29,6 +29,8 @@ INSTALLED_APPS = [
     "rest_framework",  # Django REST Framework
     "drf_yasg",  # مستندسازی API با Swagger
     "corsheaders",  # مدیریت CORS
+
+    "accounts",
 ]
 
 MIDDLEWARE = [
@@ -131,3 +133,5 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # اجازه دسترسی از فرانت React
 ]
 CORS_ALLOW_ALL_ORIGINS = True  # اجازه همه منابع (در توسعه)
+
+AUTH_USER_MODEL = "accounts.User"
