@@ -11,7 +11,7 @@ schema_view = get_schema_view(
     openapi.Info(
         title="Weather API",  # عنوان مستندات
         default_version="v1",  # نسخه پیش‌فرض
-        description="مستندات API هواشناسی",  # توضیح کوتاه
+        description="مستندات API متین چت",  # توضیح کوتاه
     ),
     public=True,  # مستندات عمومی باشد
     permission_classes=(permissions.AllowAny,),  # اجازه دسترسی همه

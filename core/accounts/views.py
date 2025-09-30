@@ -30,22 +30,25 @@ class RegisterViews(generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # ایجاد لینک فعالسازی
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
         current_site = get_current_site(request).domain
         activation_link = f"http://{current_site}{reverse('activate-account')}?uidb64={uidb64}&token={token}"
 
         subject = "فعالسازی حساب کاربری"
-        message = (
-            f"لطفا برای فعالسازی حساب خود روی لینک زیر کلیک کنید:\n{activation_link}"
-        )
+        message = f"لطفا برای فعالسازی حساب خود روی لینک زیر کلیک کنید:\n{activation_link}"
 
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        # جلوگیری از کرش کردن درخواست در صورت مشکل ایمیل
+        try:
+            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        except Exception as e:
+            print("Email sending failed:", e)
 
         return Response(
-            {
-                "detail": "ثبت‌نام با موفقیت انجام شد. لطفا ایمیل خود را برای فعالسازی چک کنید."
-            }
+            {"detail": "ثبت‌نام با موفقیت انجام شد. لطفا ایمیل خود را برای فعالسازی چک کنید."},
+            status=201
         )
 
 
