@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     "rest_framework",  # Django REST Framework
     "drf_yasg",  # مستندسازی API با Swagger
     "corsheaders",  # مدیریت CORS
+
+    "chat"
     "accounts",
 ]
 

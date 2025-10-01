@@ -22,6 +22,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),  # پنل ادمین
     path("api-auth/", include("rest_framework.urls")),
     path("accounts/", include("accounts.urls")),
+    path("chat/", include("chat.urls")),
 
 
     # مسیر JSON مستندات Swagger
