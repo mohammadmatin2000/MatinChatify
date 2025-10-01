@@ -1,15 +1,18 @@
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView,TokenBlacklistView
 from django.urls import path
 from .views import (
     RegisterViews,
     RequestPasswordResetEmail,
     PasswordResetConfirmView,
     ActivateAccount,
+    LogoutView
 )
 
 urlpatterns = [
     path("register/", RegisterViews.as_view(), name="register"),
     path("login/", TokenObtainPairView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
+
     path(
         "password-reset/",
         RequestPasswordResetEmail.as_view(),

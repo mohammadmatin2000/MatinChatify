@@ -36,3 +36,5 @@ flake8
 
 # سرور تولید برای Django
 gunicorn
+
+djangorestframework-simplejwt[blacklist]

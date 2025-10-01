@@ -12,16 +12,15 @@ from django.conf import settings
 from django.utils.http import urlsafe_base64_decode
 from rest_framework.views import APIView
 from django.contrib.auth.hashers import make_password
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import (
     RegisterSerializer,
     EmailSerializer,
     SetNewPasswordSerializer,
     ActivationSerializer,
 )
-
 User = get_user_model()
-
-
 # ======================================================================================================================
 class RegisterViews(generics.GenericAPIView):
     serializer_class = RegisterSerializer
@@ -50,8 +49,6 @@ class RegisterViews(generics.GenericAPIView):
             {"detail": "ثبت‌نام با موفقیت انجام شد. لطفا ایمیل خود را برای فعالسازی چک کنید."},
             status=201
         )
-
-
 # ======================================================================================================================
 class RequestPasswordResetEmail(generics.GenericAPIView):
     serializer_class = EmailSerializer
@@ -79,9 +76,7 @@ class RequestPasswordResetEmail(generics.GenericAPIView):
         return Response(
             {"detail": "ایمیل بازیابی رمز ارسال شد."}, status=status.HTTP_200_OK
         )
-
-
-# ====================================================================
+# ======================================================================================================================
 class PasswordResetConfirmView(APIView):
     serializer_class = SetNewPasswordSerializer
 
@@ -110,8 +105,6 @@ class PasswordResetConfirmView(APIView):
                 {"error": "لینک معتبر نیست یا منقضی شده."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-
 # ======================================================================================================================
 class ActivateAccount(APIView):
     serializer_class = ActivationSerializer
@@ -140,6 +133,21 @@ class ActivateAccount(APIView):
                 {"error": "لینک فعال‌سازی نامعتبر است یا منقضی شده."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+# ======================================================================================================================
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
 
+            return Response({"detail": "OK"}, status=status.HTTP_200_OK)  # تغییر وضعیت پاسخ به 200 OK
+
+        except KeyError:
+            return Response({"detail": "Refresh token is missing in the request body."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": f"Invalid token or error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 # ======================================================================================================================
