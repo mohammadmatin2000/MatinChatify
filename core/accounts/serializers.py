@@ -5,10 +5,8 @@ from django.utils.encoding import smart_str
 from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.tokens import default_token_generator
-
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 User = get_user_model()
-
-
 # ======================================================================================================================
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -35,8 +33,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.is_verified = False
         user.save()
         return user
-
-
 # ======================================================================================================================
 class EmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -45,8 +41,6 @@ class EmailSerializer(serializers.Serializer):
         if not User.objects.filter(email=value).exists():
             raise serializers.ValidationError("کاربری با این ایمیل وجود ندارد.")
         return value
-
-
 # ======================================================================================================================
 class SetNewPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, required=True)
@@ -70,8 +64,6 @@ class SetNewPasswordSerializer(serializers.Serializer):
         user.set_password(password)
         user.save()
         return user
-
-
 # ======================================================================================================================
 class ActivationSerializer(serializers.Serializer):
     token = serializers.CharField()
@@ -95,6 +87,21 @@ class ActivationSerializer(serializers.Serializer):
         user.is_active = True
         user.save()
         return user
+# ======================================================================================================================
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # اگه بخوای اطلاعات اضافه کنی به توکن
+        token['email'] = user.email
+        return token
 
-
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # اینجا اطلاعات کاربر رو هم به ریسپانس اضافه می‌کنیم
+        data.update({
+            "id": self.user.id,
+            "email": self.user.email,
+        })
+        return data
 # ======================================================================================================================

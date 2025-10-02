@@ -14,11 +14,13 @@ from rest_framework.views import APIView
 from django.contrib.auth.hashers import make_password
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import (
     RegisterSerializer,
     EmailSerializer,
     SetNewPasswordSerializer,
     ActivationSerializer,
+    CustomTokenObtainPairSerializer
 )
 User = get_user_model()
 # ======================================================================================================================
@@ -45,9 +47,15 @@ class RegisterViews(generics.GenericAPIView):
         except Exception as e:
             print("Email sending failed:", e)
 
+        # ✅ بازگرداندن اطلاعات کاربر به فرانت
         return Response(
-            {"detail": "ثبت‌نام با موفقیت انجام شد. لطفا ایمیل خود را برای فعالسازی چک کنید."},
-            status=201
+            {
+                "id": user.id,
+                "email": user.email,
+                "is_verified": user.is_verified,
+                "detail": "ثبت‌نام با موفقیت انجام شد. لطفا ایمیل خود را برای فعالسازی چک کنید."
+            },
+            status=status.HTTP_201_CREATED
         )
 # ======================================================================================================================
 class RequestPasswordResetEmail(generics.GenericAPIView):
@@ -150,4 +158,7 @@ class LogoutView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": f"Invalid token or error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+# ======================================================================================================================
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
 # ======================================================================================================================

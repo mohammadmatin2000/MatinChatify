@@ -54,7 +54,7 @@ class MessageAdmin(admin.ModelAdmin):
     search_fields = ('sender__username', 'receiver__username', 'text')
 
     # تنظیمات فیلدهای نمایش داده‌شده در فرم اضافه/ویرایش
-    fields = ('sender', 'receiver', 'text', 'image', 'created_date')
+    fields = ('sender', 'receiver', 'text', 'image')
 
 
 # ثبت مدل Message در پنل ادمین
