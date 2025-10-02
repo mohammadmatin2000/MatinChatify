@@ -38,3 +38,5 @@ flake8
 gunicorn
 
 djangorestframework-simplejwt[blacklist]
+
+channels

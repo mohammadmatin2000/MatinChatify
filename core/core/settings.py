@@ -29,7 +29,7 @@ INSTALLED_APPS = [
     "drf_yasg",  # مستندسازی API با Swagger
     "corsheaders",  # مدیریت CORS
 
-    "chat"
+    "chat",
     "accounts",
 ]
 
@@ -130,3 +130,5 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+ASGI_APPLICATION = 'chat.asgi.application'
