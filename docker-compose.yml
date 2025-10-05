@@ -28,23 +28,16 @@ services:
       PG_HOST: db
       PG_PORT: 5432
       DEBUG: True
-
+      REDIS_URL: redis://redis:6379/0  # Redis URL
     ports:
       - "8000:8000"
     depends_on:
       - db
+      - redis  # Redis dependency added
 
-#  frontend:
-#    build:
-#      context: .
-#      dockerfile: ./dockerfiles/dev/django/Dockerfile-1
-#    container_name: frontend
-#    ports:
-#      - "3000:3000"
-#    volumes:
-#      - ./frontend:/app
-#      - /app/node_modules
-#    environment:
-#      - CHOKIDAR_USEPOLLING=true
-#    stdin_open: true
-#    tty: true
+  redis:
+    image: redis:alpine
+    container_name: redis
+    expose:
+      - "6379"  # Redis service port
+    restart: always

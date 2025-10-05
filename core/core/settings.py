@@ -14,10 +14,11 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-rypu+!750p%+bjdjsoh5t
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 # Application definition
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -25,9 +26,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework_simplejwt.token_blacklist",
-    "rest_framework",  # Django REST Framework
-    "drf_yasg",  # مستندسازی API با Swagger
-    "corsheaders",  # مدیریت CORS
+    "rest_framework",
+    "drf_yasg",
+    "corsheaders",
+    "channels",
+
 
     "chat",
     "accounts",
@@ -62,7 +65,20 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "core.wsgi.application"
+# WSGI_APPLICATION = "core.wsgi.application"
+ASGI_APPLICATION = 'core.asgi.application'
+
+
+# settings.py
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("redis", 6379)],
+        },
+    },
+}
+
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -131,4 +147,5 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 
-ASGI_APPLICATION = 'chat.asgi.application'
+
+
