@@ -1,23 +1,39 @@
 import json
+import base64
+import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from chat.models import MessageModels
 from django.utils.timezone import now
+from django.core.files.base import ContentFile
 
+# ✅ لیست سراسری کاربران آنلاین
+online_users_list = set()
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        self.user_id = self.scope["user"].id if self.scope["user"].is_authenticated else None
-        self.room_name = self.scope["url_route"]["kwargs"]["room_name"]
-        self.room_group_name = f"chat_{self.room_name}"
+        self.user = self.scope["user"]
+        self.user_id = self.user.id if self.user.is_authenticated else None
+        self.room_name = self.scope["url_route"]["kwargs"].get("room_name")
+        self.room_group_name = f"chat_{self.room_name}" if self.room_name else None
 
-        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        print(f"✅ WebSocket connected: {self.channel_name} -> {self.room_group_name}")
+        print(f"✅ WS connected: {self.channel_name} | user_id={self.user_id}")
 
+        # 👤 اضافه شدن به لیست کاربران آنلاین
+        if self.user_id:
+            online_users_list.add(self.user_id)
+            await self.channel_layer.group_add("online_users", self.channel_name)
+            await self.broadcast_online_users()
+
+        # 💬 اضافه شدن به گروه روم (درصورت وجود)
+        if self.room_group_name:
+            await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+
+        # 📤 پیام اتصال موفق
         await self.send(text_data=json.dumps({
             "message": {
-                "text": f"✅ Connected to chat room: {self.room_name}",
+                "text": "✅ Connected",
                 "senderId": None,
                 "receiverId": None,
                 "createdAt": str(now()),
@@ -25,14 +41,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-        print(f"🔌 WebSocket disconnected: {self.channel_name}")
+        print(f"🔌 WS disconnected: {self.channel_name} | user_id={self.user_id}")
+
+        if self.room_group_name:
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+        if self.user_id:
+            online_users_list.discard(self.user_id)
+            await self.broadcast_online_users()
+            await self.channel_layer.group_discard("online_users", self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
         try:
             data = json.loads(text_data)
-            print("🟢 Backend received:", data)
-
             msg_type = data.get("type")
             msg = data.get("message")
 
@@ -48,89 +69,85 @@ class ChatConsumer(AsyncWebsocketConsumer):
             print("❌ Backend receive error:", e)
             await self.send(text_data=json.dumps({"error": str(e)}))
 
-    # ✅ ایجاد پیام جدید
+    # ------------------ پیام جدید ------------------
     async def handle_chat_message(self, msg):
         sender_id = msg.get("senderId")
         receiver_id = msg.get("receiverId")
         temp_id = msg.get("tempId")
-        text = msg.get("text")
-        image = msg.get("image")
+        text = msg.get("text", "")
+        image_base64 = msg.get("image")
 
-        if not text:
+        if not text and not image_base64:
             await self.send(text_data=json.dumps({"error": "Empty message"}))
             return
+
+        image_file = None
+        if image_base64 and image_base64.startswith("data:image"):
+            try:
+                fmt, imgstr = image_base64.split(";base64,")
+                ext = fmt.split("/")[-1]
+                image_file = ContentFile(base64.b64decode(imgstr), name=f"{uuid.uuid4()}.{ext}")
+            except Exception as e:
+                print("⚠️ Image decode error:", e)
 
         room_name = "_".join(sorted([str(sender_id), str(receiver_id)]))
         self.room_group_name = f"chat_{room_name}"
 
-        # ذخیره در دیتابیس
         saved = await sync_to_async(MessageModels.objects.create)(
             sender_id=sender_id,
             receiver_id=receiver_id,
             text=text,
-            image=image,
+            image=image_file,
         )
 
         message = {
-            "id": saved.id,  # 👈 id واقعی
-            "tempId": temp_id,  # 👈 برای sync شدن با فرانت
+            "id": saved.id,
+            "tempId": temp_id,
             "text": saved.text,
             "senderId": sender_id,
             "receiverId": receiver_id,
-            "image": saved.image or None,
+            "image": saved.image.url if saved.image else None,
             "createdAt": str(saved.created_date),
         }
 
         await self.channel_layer.group_send(
             self.room_group_name,
-            {"type": "chat_message", "message": message},
+            {"type": "chat_message", "message": message}
         )
+        print(f"✅ Message saved and broadcasted: {saved.id}")
 
-        print(f"✅ Message saved (id={saved.id}) and broadcasted")
-
-    # ✏️ ویرایش پیام
+    # ------------------ ویرایش پیام ------------------
     async def handle_edit_message(self, data):
         message_id = data.get("messageId")
         new_text = data.get("newText")
-
         if not message_id or not new_text:
-            await self.send(text_data=json.dumps({"error": "Invalid edit request"}))
             return
 
         try:
-            message_obj = await sync_to_async(MessageModels.objects.get)(id=message_id)
-            message_obj.text = new_text
-            await sync_to_async(message_obj.save)()
+            msg_obj = await sync_to_async(MessageModels.objects.get)(id=message_id)
+            msg_obj.text = new_text
+            await sync_to_async(msg_obj.save)()
 
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {"type": "edit_message", "messageId": message_id, "newText": new_text},
+                {"type": "edit_message", "messageId": message_id, "newText": new_text}
             )
-            print(f"✅ Message {message_id} edited")
-
         except MessageModels.DoesNotExist:
-            await self.send(text_data=json.dumps({"error": "Message not found"}))
+            pass
 
-    # 🗑 حذف پیام
+    # ------------------ حذف پیام ------------------
     async def handle_delete_message(self, data):
         message_id = data.get("messageId")
-
         if not message_id:
-            await self.send(text_data=json.dumps({"error": "Invalid delete request"}))
             return
 
-        try:
-            await sync_to_async(MessageModels.objects.filter(id=message_id).delete)()
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {"type": "delete_message", "messageId": message_id},
-            )
-            print(f"✅ Message {message_id} deleted")
+        await sync_to_async(MessageModels.objects.filter(id=message_id).delete)()
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {"type": "delete_message", "messageId": message_id}
+        )
 
-        except Exception as e:
-            await self.send(text_data=json.dumps({"error": str(e)}))
-
-    # 📤 Broadcast‌ها
+    # ------------------ Broadcasts پیام ------------------
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({"message": event["message"]}))
 
@@ -145,4 +162,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             "type": "delete_message",
             "messageId": event["messageId"],
+        }))
+
+    # ------------------ وضعیت آنلاین ------------------
+    async def broadcast_online_users(self):
+        online_list = list(online_users_list)
+        print("📡 Broadcasting online users:", online_list)
+        await self.channel_layer.group_send(
+            "online_users",
+            {
+                "type": "update_online_users",
+                "onlineUsers": online_list,
+            }
+        )
+
+    async def update_online_users(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "update_online_users",
+            "onlineUsers": event["onlineUsers"],
         }))
