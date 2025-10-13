@@ -1,3 +1,4 @@
+# core/asgi.py
 import os
 from urllib.parse import parse_qs
 
@@ -18,15 +19,19 @@ django_asgi_app = get_asgi_application()
 
 class JWTAuthMiddleware(BaseMiddleware):
     """
-    JWT Authentication برای WebSocket
+    Middleware برای WebSocket با JWT
     """
     async def __call__(self, scope, receive, send):
+        # پیش فرض: Anonymous
         scope["user"] = AnonymousUser()
+
+        # گرفتن token از query_string
         query_string = parse_qs(scope["query_string"].decode())
         token = query_string.get("token")
         if token:
             token = token[0]
             try:
+                # اعتبار سنجی JWT
                 validated_token = UntypedToken(token)
                 auth = JWTAuthentication()
                 user = await sync_to_async(auth.get_user)(validated_token)
@@ -36,6 +41,9 @@ class JWTAuthMiddleware(BaseMiddleware):
                 print("❌ Invalid JWT token")
             except Exception as e:
                 print("❌ JWT middleware error:", e)
+        else:
+            print("❌ No JWT token provided")
+
         return await super().__call__(scope, receive, send)
 
 
