@@ -20,7 +20,8 @@ from .serializers import (
     EmailSerializer,
     SetNewPasswordSerializer,
     ActivationSerializer,
-    CustomTokenObtainPairSerializer
+    CustomTokenObtainPairSerializer,
+    UserProfileUpdateSerializer
 )
 User = get_user_model()
 # ======================================================================================================================
@@ -161,4 +162,12 @@ class LogoutView(APIView):
 # ======================================================================================================================
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+# ======================================================================================================================
+class UserProfileUpdateView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserProfileUpdateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        # اینجا حتما پروفایل کاربر لاگین شده را برگردانیم
+        return self.request.user.user_profile
 # ======================================================================================================================

@@ -1,11 +1,10 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from .models import ContactModels, ChatModels, MessageModels
 from .serializers import ContactSerializer, ChatSerializer, MessageSerializer
 from accounts.models import User
-
+from django.db.models import Q
 # ======================================================================================================================
 class ContactViewSet(viewsets.ModelViewSet):
     queryset = ContactModels.objects.all()
@@ -15,7 +14,6 @@ class ContactViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return ContactModels.objects.filter(user=user)
-
 # ======================================================================================================================
 class ChatViewSet(viewsets.ModelViewSet):
     queryset = ChatModels.objects.all()
@@ -24,8 +22,7 @@ class ChatViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return ChatModels.objects.filter(participants=user)
-
+        return ChatModels.objects.filter(participants=user).prefetch_related("participants", "messages")
 # ======================================================================================================================
 class MessageViewSet(viewsets.ModelViewSet):
     serializer_class = MessageSerializer
@@ -34,21 +31,26 @@ class MessageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         receiver_id = self.kwargs.get('receiver')
-
         if not receiver_id:
             return MessageModels.objects.none()
 
-        # استفاده از id واقعی کاربر
         receiver = get_object_or_404(User, id=receiver_id)
-
-        # برگرداندن تمام پیام‌ها بین کاربر لاگین شده و گیرنده
         return MessageModels.objects.filter(
-            sender=user, receiver=receiver
-        ) | MessageModels.objects.filter(
-            sender=receiver, receiver=user
-        )
+            Q(sender=user, receiver=receiver) | Q(sender=receiver, receiver=user)
+        ).order_by("-created_date")  # آخرین پیام اول
 
     def perform_create(self, serializer):
-        # فرستنده همیشه کاربر لاگین شده است
-        serializer.save(sender=self.request.user)
+        sender = self.request.user
+        receiver = get_object_or_404(User, id=self.kwargs.get('receiver'))
+
+        # 🔹 پیدا کردن چت بین این دو یا ساختن آن
+        chat = ChatModels.objects.filter(participants=sender).filter(participants=receiver).first()
+        if not chat:
+            chat = ChatModels.objects.create()
+            chat.participants.set([sender, receiver])
+
+        # 🔹 ذخیره پیام و آپدیت last_message
+        message = serializer.save(sender=sender, receiver=receiver, chat=chat)
+        chat.last_message = message
+        chat.save(update_fields=["last_message"])
 # ======================================================================================================================

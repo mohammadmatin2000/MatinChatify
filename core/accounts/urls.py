@@ -1,4 +1,3 @@
-from rest_framework_simplejwt.views import TokenObtainPairView
 from django.urls import path
 from .views import (
     RegisterViews,
@@ -6,9 +5,10 @@ from .views import (
     PasswordResetConfirmView,
     ActivateAccount,
     LogoutView,
-    CustomTokenObtainPairView
+    CustomTokenObtainPairView,
+    UserProfileUpdateView
 )
-
+# ======================================================================================================================
 urlpatterns = [
     path("register/", RegisterViews.as_view(), name="register"),
     path("login/", CustomTokenObtainPairView.as_view(), name="login"),
@@ -25,4 +25,7 @@ urlpatterns = [
         name="password_reset_confirm",
     ),
     path("activate-account/", ActivateAccount.as_view(), name="activate-account"),
+
+    path("profile/update/", UserProfileUpdateView.as_view(), name="profile-update")
 ]
+# ======================================================================================================================

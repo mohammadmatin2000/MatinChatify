@@ -9,7 +9,6 @@ class ContactSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContactModels
         fields = ['user', 'contact', 'contact_name', 'contact_email']
-
 # ======================================================================================================================
 class ChatSerializer(serializers.ModelSerializer):
     participants = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), many=True)
@@ -20,10 +19,10 @@ class ChatSerializer(serializers.ModelSerializer):
         fields = ['id', 'participants', 'last_message', 'created_date', 'updated_date']
 
     def get_last_message(self, obj):
-        if obj.last_message:
-            return MessageSerializer(obj.last_message).data
+        last_msg = obj.messages.order_by("-created_date").first()
+        if last_msg:
+            return MessageSerializer(last_msg).data
         return None
-
 # ======================================================================================================================
 class MessageSerializer(serializers.ModelSerializer):
     sender = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())

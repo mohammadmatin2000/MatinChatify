@@ -31,7 +31,6 @@ INSTALLED_APPS = [
     "corsheaders",
     "channels",
 
-
     "chat",
     "accounts",
 ]
@@ -68,7 +67,6 @@ TEMPLATES = [
 # WSGI_APPLICATION = "core.wsgi.application"
 ASGI_APPLICATION = 'core.asgi.application'
 
-
 # settings.py
 CHANNEL_LAYERS = {
     "default": {
@@ -78,7 +76,6 @@ CHANNEL_LAYERS = {
         },
     },
 }
-
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -129,9 +126,12 @@ AUTH_USER_MODEL = "accounts.User"
 
 # REST Framework settings
 REST_FRAMEWORK = {
-     "DEFAULT_AUTHENTICATION_CLASSES": (
+    "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
     ),
 }
 
@@ -146,6 +146,3 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
-
-
-

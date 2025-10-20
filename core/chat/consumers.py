@@ -1,5 +1,3 @@
-# consumers/chat_and_online.py
-import json
 import base64
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer

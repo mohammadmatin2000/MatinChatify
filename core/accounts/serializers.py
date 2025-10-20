@@ -6,6 +6,7 @@ from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.tokens import default_token_generator
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from accounts.models import Profile
 User = get_user_model()
 # ======================================================================================================================
 class RegisterSerializer(serializers.ModelSerializer):
@@ -104,4 +105,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "email": self.user.email,
         })
         return data
+# ======================================================================================================================
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = Profile
+        fields = ['first_name', 'last_name', 'image']
+        extra_kwargs = {
+            'first_name': {'required': True},
+            'last_name': {'required': False},
+        }
+
 # ======================================================================================================================
