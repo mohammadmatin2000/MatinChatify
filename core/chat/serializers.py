@@ -1,14 +1,20 @@
 from rest_framework import serializers
 from .models import ContactModels, ChatModels, MessageModels
-from accounts.models import User
+from accounts.models import User,Profile
 # ======================================================================================================================
 class ContactSerializer(serializers.ModelSerializer):
-    contact_name = serializers.CharField(source="contact.username", read_only=True)
+    name = serializers.SerializerMethodField()
     contact_email = serializers.EmailField(source="contact.email", read_only=True)
 
     class Meta:
         model = ContactModels
-        fields = ['user', 'contact', 'contact_name', 'contact_email']
+        fields = ['user', 'contact', 'contact_email', 'name']
+
+    def get_name(self, obj):
+        profile = getattr(obj.contact, "user_profile", None)
+        if profile and (profile.first_name or profile.last_name):
+            return profile.get_fullname()
+        return obj.contact.email
 # ======================================================================================================================
 class ChatSerializer(serializers.ModelSerializer):
     participants = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), many=True)

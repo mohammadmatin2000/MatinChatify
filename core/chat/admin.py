@@ -45,7 +45,7 @@ admin.site.register(ChatModels, ChatAdmin)
 # ======================================================================================================================
 class MessageAdmin(admin.ModelAdmin):
     # نمایش فیلدهای موردنظر در لیست
-    list_display = ('sender', 'receiver', 'text', 'created_date', 'image','chat')
+    list_display = ('sender', 'receiver', 'text', 'created_date', 'image')
 
     # فیلتر بر اساس فیلدهای مختلف
     list_filter = ('sender', 'receiver', 'created_date')
