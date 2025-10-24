@@ -12,7 +12,7 @@ from django.conf import settings
 from django.utils.http import urlsafe_base64_decode
 from rest_framework.views import APIView
 from django.contrib.auth.hashers import make_password
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import (
@@ -27,7 +27,7 @@ User = get_user_model()
 # ======================================================================================================================
 class RegisterViews(generics.GenericAPIView):
     serializer_class = RegisterSerializer
-
+    permission_classes = [AllowAny]
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

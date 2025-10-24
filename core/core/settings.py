@@ -115,12 +115,17 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # تنظیمات CORS
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # فقط اجازه دسترسی از فرانت React
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
-# Only allow requests from the specified origins
-CORS_ALLOW_ALL_ORIGINS = True  # باید False باشد اگر بخواهید فقط مراجع خاص اجازه داشته باشند
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 
 AUTH_USER_MODEL = "accounts.User"
 
