@@ -63,8 +63,6 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
-
-
 # ======================================================================================================================
 class Profile(models.Model):
     user = models.OneToOneField(
@@ -82,8 +80,6 @@ class Profile(models.Model):
         if self.first_name or self.last_name:
             return self.first_name + " " + self.last_name
         return "کاربر جدید"
-
-
 # ======================================================================================================================
 @receiver(post_save, sender=User)
 def create_profile(sender, instance, created, **kwargs):

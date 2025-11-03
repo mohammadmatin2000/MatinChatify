@@ -5,16 +5,21 @@ from accounts.models import User,Profile
 class ContactSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     contact_email = serializers.EmailField(source="contact.email", read_only=True)
-
+    profile = serializers.SerializerMethodField()
     class Meta:
         model = ContactModels
-        fields = ['user', 'contact', 'contact_email', 'name']
-
+        fields = ['user', 'contact', 'contact_email', 'name','profile']
     def get_name(self, obj):
         profile = getattr(obj.contact, "user_profile", None)
         if profile and (profile.first_name or profile.last_name):
             return profile.get_fullname()
         return obj.contact.email
+    def get_profile(self, obj):
+        profile = getattr(obj.contact, "user_profile", None)
+        if profile and profile.image:
+            request = self.context.get("request")
+            return request.build_absolute_uri(profile.image.url)
+        return None
 # ======================================================================================================================
 class ChatSerializer(serializers.ModelSerializer):
     participants = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), many=True)
