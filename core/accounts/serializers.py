@@ -107,14 +107,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 # ======================================================================================================================
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
     image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Profile
         fields = ['first_name', 'last_name', 'image']
-        extra_kwargs = {
-            'first_name': {'required': True},
-            'last_name': {'required': False},
-        }
-
 # ======================================================================================================================

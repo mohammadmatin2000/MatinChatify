@@ -15,6 +15,7 @@ from django.contrib.auth.hashers import make_password
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.parsers import MultiPartParser,FormParser
 from .serializers import (
     RegisterSerializer,
     EmailSerializer,
@@ -166,8 +167,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class UserProfileUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileUpdateSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get_object(self):
-        # اینجا حتما پروفایل کاربر لاگین شده را برگردانیم
         return self.request.user.user_profile
 # ======================================================================================================================
