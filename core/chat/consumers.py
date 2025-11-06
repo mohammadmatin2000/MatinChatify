@@ -1,27 +1,44 @@
 import base64
 import uuid
+import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from chat.models import MessageModels
 from django.utils.timezone import now
 from django.core.files.base import ContentFile
 
+# ======================================================================================================================
 # ✅ لیست سراسری کاربران آنلاین
 online_users_list = set()
+
+
+# ======================================================================================================================
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope["user"]
         self.user_id = self.user.id if self.user.is_authenticated else None
+
+        if not self.user_id:
+            await self.close()
+            return
+
+        # room_name بر اساس کاربر مقصد
         self.room_name = self.scope["url_route"]["kwargs"].get("room_name")
-        self.room_group_name = f"chat_{self.room_name}" if self.room_name else None
+        if not self.room_name:
+            await self.close()
+            return
 
+        # نام گروه مشترک بین دو کاربر
+        self.room_group_name = f"chat_{'_'.join(sorted([str(self.user_id), str(self.room_name)]))}"
+
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        print(f"✅ WS connected: {self.channel_name} | user_id={self.user_id} | room={self.room_name}")
 
-        if self.room_group_name:
-            await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        print(f"✅ WS connected: {self.channel_name} | user_id={self.user_id} | room={self.room_group_name}")
 
+        # پیام اتصال موفق
         await self.send(text_data=json.dumps({
+            "type": "connection",
             "message": {
                 "text": "✅ Connected",
                 "senderId": None,
@@ -31,9 +48,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
-        if self.room_group_name:
-            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-            print(f"🔌 WS disconnected: {self.channel_name} | user_id={self.user_id} | room={self.room_name}")
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        print(f"🔌 WS disconnected: {self.channel_name} | user_id={self.user_id} | room={self.room_group_name}")
 
     async def receive(self, text_data=None):
         try:
@@ -48,12 +64,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             elif msg_type == "delete_message":
                 await self.handle_delete_message(data)
             else:
-                await self.send(text_data=json.dumps({"error": "Invalid message type"}))
-
+                await self.send(json.dumps({"error": "Invalid message type"}))
         except Exception as e:
-            print("❌ Backend receive error:", e)
-            await self.send(text_data=json.dumps({"error": str(e)}))
+            print("❌ WS receive error:", e)
+            await self.send(json.dumps({"error": str(e)}))
 
+    # -------------------- ارسال پیام جدید --------------------
     async def handle_chat_message(self, msg):
         sender_id = msg.get("senderId")
         receiver_id = msg.get("receiverId")
@@ -62,7 +78,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         image_base64 = msg.get("image")
 
         if not text and not image_base64:
-            await self.send(text_data=json.dumps({"error": "Empty message"}))
+            await self.send(json.dumps({"error": "Empty message"}))
             return
 
         image_file = None
@@ -74,10 +90,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             except Exception as e:
                 print("⚠️ Image decode error:", e)
 
-        # تعیین room_name بر اساس sender و receiver
-        room_name = "_".join(sorted([str(sender_id), str(receiver_id)]))
-        self.room_group_name = f"chat_{room_name}"
-
+        # ذخیره در دیتابیس
         saved = await sync_to_async(MessageModels.objects.create)(
             sender_id=sender_id,
             receiver_id=receiver_id,
@@ -85,7 +98,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             image=image_file,
         )
 
-        message = {
+        message_data = {
             "id": saved.id,
             "tempId": temp_id,
             "text": saved.text,
@@ -95,12 +108,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "createdAt": str(saved.created_date),
         }
 
+        # broadcast به گروه مشترک
         await self.channel_layer.group_send(
             self.room_group_name,
-            {"type": "chat_message", "message": message}
+            {
+                "type": "chat_message_broadcast",
+                "message": message_data,
+            }
         )
         print(f"✅ Message saved and broadcasted: {saved.id}")
 
+    async def chat_message_broadcast(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "chat_message",
+            "message": event["message"]
+        }))
+
+    # -------------------- ویرایش پیام --------------------
     async def handle_edit_message(self, data):
         message_id = data.get("messageId")
         new_text = data.get("newText")
@@ -112,12 +136,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await sync_to_async(msg_obj.save)()
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {"type": "edit_message", "messageId": message_id, "newText": new_text}
+                {
+                    "type": "edit_message_broadcast",
+                    "messageId": message_id,
+                    "newText": new_text
+                }
             )
             print(f"✏️ Message edited: {message_id}")
         except MessageModels.DoesNotExist:
             print(f"⚠️ Message to edit not found: {message_id}")
 
+    async def edit_message_broadcast(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "edit_message",
+            "messageId": event["messageId"],
+            "newText": event["newText"],
+        }))
+
+    # -------------------- حذف پیام --------------------
     async def handle_delete_message(self, data):
         message_id = data.get("messageId")
         if not message_id:
@@ -125,34 +161,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await sync_to_async(MessageModels.objects.filter(id=message_id).delete)()
         await self.channel_layer.group_send(
             self.room_group_name,
-            {"type": "delete_message", "messageId": message_id}
+            {
+                "type": "delete_message_broadcast",
+                "messageId": message_id
+            }
         )
         print(f"🗑️ Message deleted: {message_id}")
 
-    # Broadcast handlers
-    async def chat_message(self, event):
-        await self.send(text_data=json.dumps({"message": event["message"]}))
-
-    async def edit_message(self, event):
-        await self.send(text_data=json.dumps({
-            "type": "edit_message",
-            "messageId": event["messageId"],
-            "newText": event["newText"],
-        }))
-
-    async def delete_message(self, event):
+    async def delete_message_broadcast(self, event):
         await self.send(text_data=json.dumps({
             "type": "delete_message",
-            "messageId": event["messageId"],
+            "messageId": event["messageId"]
         }))
 
 
-import json
-from channels.generic.websocket import AsyncWebsocketConsumer
-
+# ======================================================================================================================
 # نگهداری تعداد اتصال هر کاربر
 online_users_map = {}
 
+
+# ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope["user"]
@@ -230,5 +258,4 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             "onlineUsers": event["onlineUsers"],
         }))
         print("📡 Sent updated onlineUsers to client:", event["onlineUsers"])
-
-
+# ======================================================================================================================

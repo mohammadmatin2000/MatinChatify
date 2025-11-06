@@ -19,10 +19,9 @@ class ChatViewSet(viewsets.ModelViewSet):
     queryset = ChatModels.objects.all()
     serializer_class = ChatSerializer
     permission_classes = [IsAuthenticated]
-
     def get_queryset(self):
         user = self.request.user
-        return ChatModels.objects.filter(participants=user).prefetch_related("participants", "messages")
+        return ChatModels.objects.filter(participants=user).prefetch_related("participants")
 # ======================================================================================================================
 class MessageViewSet(viewsets.ModelViewSet):
     serializer_class = MessageSerializer
@@ -37,20 +36,10 @@ class MessageViewSet(viewsets.ModelViewSet):
         receiver = get_object_or_404(User, id=receiver_id)
         return MessageModels.objects.filter(
             Q(sender=user, receiver=receiver) | Q(sender=receiver, receiver=user)
-        ).order_by("-created_date")  # آخرین پیام اول
+        ).order_by("-created_date")
 
     def perform_create(self, serializer):
         sender = self.request.user
-        receiver = get_object_or_404(User, id=self.kwargs.get('receiver'))
-
-        # 🔹 پیدا کردن چت بین این دو یا ساختن آن
-        chat = ChatModels.objects.filter(participants=sender).filter(participants=receiver).first()
-        if not chat:
-            chat = ChatModels.objects.create()
-            chat.participants.set([sender, receiver])
-
-        # 🔹 ذخیره پیام و آپدیت last_message
-        message = serializer.save(sender=sender, receiver=receiver, chat=chat)
-        chat.last_message = message
-        chat.save(update_fields=["last_message"])
+        receiver = get_object_or_404(User, id=self.kwargs.get("receiver"))
+        serializer.save(sender=sender, receiver=receiver)
 # ======================================================================================================================

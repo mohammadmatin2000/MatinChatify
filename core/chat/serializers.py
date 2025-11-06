@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import ContactModels, ChatModels, MessageModels
 from accounts.models import User,Profile
+from django.db.models import Q
 # ======================================================================================================================
 class ContactSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
@@ -23,23 +24,24 @@ class ContactSerializer(serializers.ModelSerializer):
 # ======================================================================================================================
 class ChatSerializer(serializers.ModelSerializer):
     participants = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), many=True)
-    last_message = serializers.SerializerMethodField()
-
     class Meta:
         model = ChatModels
-        fields = ['id', 'participants', 'last_message', 'created_date', 'updated_date']
-
-    def get_last_message(self, obj):
-        last_msg = obj.messages.order_by("-created_date").first()
-        if last_msg:
-            return MessageSerializer(last_msg).data
-        return None
+        fields = ['id', 'participants','created_date', 'updated_date']
 # ======================================================================================================================
 class MessageSerializer(serializers.ModelSerializer):
-    sender = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    receiver = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    created_date = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S.%fZ", read_only=True)
+    last_message = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = MessageModels
-        fields = ['id', 'sender', 'receiver', 'text', 'image', 'created_date', 'updated_date']
+        fields = ['id', 'sender', 'receiver', 'text', 'image', 'created_date', 'updated_date', 'last_message']
+
+    def get_last_message(self, obj):
+        # آخرین پیام بین این دو کاربر
+        messages = MessageModels.objects.filter(
+            Q(sender=obj.sender, receiver=obj.receiver) | Q(sender=obj.receiver, receiver=obj.sender)
+        ).order_by('-created_date')
+        last_msg = messages.first()
+        if last_msg:
+            return last_msg.text
+        return None
 # ======================================================================================================================

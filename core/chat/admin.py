@@ -21,10 +21,10 @@ admin.site.register(ContactModels, ContactAdmin)
 # ======================================================================================================================
 class ChatAdmin(admin.ModelAdmin):
     # نمایش فیلدهای موردنظر در لیست
-    list_display = ('id', 'get_participants', 'last_message')
+    list_display = ('id', 'get_participants',)
 
     # فیلتر بر اساس فیلدهای مختلف
-    list_filter = ('participants', 'last_message')
+    list_filter = ('participants',)
 
     # جستجو بر اساس فیلدهای مختلف
     search_fields = ('id',)
@@ -36,9 +36,7 @@ class ChatAdmin(admin.ModelAdmin):
     get_participants.short_description = 'Participants'
 
     # تنظیمات فیلدهای نمایش داده‌شده در فرم اضافه/ویرایش
-    fields = ('participants', 'last_message')
-
-
+    fields = ('participants',)
 # ثبت مدل Chat در پنل ادمین
 admin.site.register(ChatModels, ChatAdmin)
 

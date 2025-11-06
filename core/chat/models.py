@@ -13,7 +13,6 @@ class ContactModels(models.Model):
 # ======================================================================================================================
 class ChatModels(models.Model):
     participants = models.ManyToManyField(User, related_name="chats")
-    last_message = models.ForeignKey("MessageModels", on_delete=models.SET_NULL, null=True, blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
 
