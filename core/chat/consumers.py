@@ -6,12 +6,9 @@ from asgiref.sync import sync_to_async
 from chat.models import MessageModels
 from django.utils.timezone import now
 from django.core.files.base import ContentFile
-
 # ======================================================================================================================
 # ✅ لیست سراسری کاربران آنلاین
 online_users_list = set()
-
-
 # ======================================================================================================================
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -22,7 +19,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
 
-        # room_name بر اساس کاربر مقصد
+        # room_name کاربر مقابل
         self.room_name = self.scope["url_route"]["kwargs"].get("room_name")
         if not self.room_name:
             await self.close()
@@ -119,6 +116,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         print(f"✅ Message saved and broadcasted: {saved.id}")
 
     async def chat_message_broadcast(self, event):
+        # ارسال به کل اعضای گروه
         await self.send(text_data=json.dumps({
             "type": "chat_message",
             "message": event["message"]
@@ -128,7 +126,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def handle_edit_message(self, data):
         message_id = data.get("messageId")
         new_text = data.get("newText")
-        if not message_id or not new_text:
+        if not message_id or new_text is None:
             return
         try:
             msg_obj = await sync_to_async(MessageModels.objects.get)(id=message_id)
@@ -173,13 +171,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "type": "delete_message",
             "messageId": event["messageId"]
         }))
-
-
 # ======================================================================================================================
 # نگهداری تعداد اتصال هر کاربر
 online_users_map = {}
-
-
 # ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
     async def connect(self):
