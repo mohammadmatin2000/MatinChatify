@@ -33,6 +33,7 @@ INSTALLED_APPS = [
 
     "chat",
     "accounts",
+    "groups",
 ]
 
 MIDDLEWARE = [

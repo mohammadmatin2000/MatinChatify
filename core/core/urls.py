@@ -23,6 +23,7 @@ urlpatterns = [
     path("api-auth/", include("rest_framework.urls")),
     path("accounts/", include("accounts.urls")),
     path("chat/", include("chat.urls")),
+    path("groups/", include("groups.urls")),
 
 
     # مسیر JSON مستندات Swagger
