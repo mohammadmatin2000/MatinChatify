@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
-import ChatContainer from "./ChatContainer";
+import { useEffect, useState } from "react";
 import axios from "axios";
+import { useChatStore } from "../store/useChatStore";
 
 function GroupsList() {
   const [groups, setGroups] = useState([]);
-  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const accessToken = localStorage.getItem("accessToken");
+
+  const { setSelectedGroup } = useChatStore();
 
   useEffect(() => {
     const fetchGroups = async () => {
@@ -16,32 +18,67 @@ function GroupsList() {
         setGroups(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         console.error(err);
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchGroups();
   }, [accessToken]);
 
-  if (selectedGroup) {
-    return <ChatContainer group={selectedGroup} />;
-  }
+  if (isLoading)
+    return (
+      <div className="flex justify-center items-center py-8 text-slate-400 animate-pulse">
+        در حال بارگذاری گروه‌ها...
+      </div>
+    );
+
+  if (!groups.length)
+    return (
+      <div className="text-center py-8 text-slate-400">
+        هیچ گروهی یافت نشد 😔
+      </div>
+    );
 
   return (
-    <div className="relative mt-4">
-      {groups.length === 0 ? (
-        <div className="text-center text-gray-400 mt-6">هیچ گروهی موجود نیست</div>
-      ) : (
-        <ul className="space-y-2 mt-2">
-          {groups.map((g) => (
-            <li
-              key={g.id || g._id}
-              className="p-2 bg-slate-700 rounded cursor-pointer hover:bg-slate-600"
-              onClick={() => setSelectedGroup(g)}
-            >
-              {g.name} ({g.members?.length || 0} عضو)
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="space-y-3 px-2">
+      {groups.map((g) => {
+        // URL آواتار گروه
+        const groupAvatarUrl = g.avatar
+          ? g.avatar.startsWith("http")
+            ? g.avatar
+            : `http://localhost:8000${g.avatar}`
+          : null;
+
+        return (
+          <div
+            key={g._id}
+            onClick={() => setSelectedGroup(g)}
+            className="flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:bg-gradient-to-r hover:from-cyan-600/20 hover:to-blue-500/20 shadow-sm hover:shadow-lg"
+          >
+            {/* آواتار گروه */}
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-white text-lg font-bold shadow-md overflow-hidden">
+              {groupAvatarUrl ? (
+                <img
+                  src={groupAvatarUrl}
+                  alt={g.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => (e.target.src = "/avatar.png")}
+                />
+              ) : (
+                <span>{g.name[0].toUpperCase()}</span>
+              )}
+            </div>
+
+            {/* اطلاعات گروه */}
+            <div className="flex flex-col">
+              <p className="text-slate-200 font-semibold text-lg truncate">{g.name}</p>
+              <p className="text-slate-400 text-sm flex items-center gap-1">
+                {g.members?.length || 0} عضو
+              </p>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

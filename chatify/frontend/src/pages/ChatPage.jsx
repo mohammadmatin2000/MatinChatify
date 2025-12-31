@@ -5,25 +5,22 @@ import ProfileHeader from "../components/ProfileHeader";
 import ActiveTabSwitch from "../components/ActiveTabSwitch";
 import ChatsList from "../components/ChatsList";
 import ContactList from "../components/ContactList";
-import GroupsList from "../components/GroupsList"; // اضافه شد
+import GroupsList from "../components/GroupsList";
 import ChatContainer from "../components/ChatContainer";
+import GroupChatContainer from "../components/GroupChatContainer";
 import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 
 function ChatPage() {
-  const { activeTab, selectedUser } = useChatStore();
+  const { activeTab, selectedUser, selectedGroup, setSelectedGroup } = useChatStore();
 
   return (
     <div className="relative w-full max-w-6xl h-[800px]" dir="rtl">
-      <BorderAnimatedContainer>
-        {/* سمت چپ */}
+      <BorderAnimatedContainer className="flex h-full">
+
+        {/* Sidebar */}
         <div className="w-80 bg-slate-800/50 backdrop-blur-sm flex flex-col">
-          {/* هدر پروفایل */}
-          <ProfileHeader user={selectedUser} />
-
-          {/* سوییچ تب‌ها */}
+          <ProfileHeader user={selectedUser || selectedGroup} />
           <ActiveTabSwitch />
-
-          {/* لیست محتوا بر اساس تب */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             {activeTab === "chats" && <ChatsList />}
             {activeTab === "contacts" && <ContactList />}
@@ -31,12 +28,27 @@ function ChatPage() {
           </div>
         </div>
 
-        {/* سمت راست */}
+        {/* Chat Area */}
         <div className="flex-1 flex flex-col bg-slate-900/50 backdrop-blur-sm">
-          {selectedUser
-            ? <ChatContainer />
-            : <NoConversationPlaceholder message="هیچ گفتگویی انتخاب نشده است" />}
+
+          {/* چت با یوزر */}
+          {selectedUser && <ChatContainer user={selectedUser} />}
+
+          {/* چت گروه */}
+          {selectedGroup && (
+            <GroupChatContainer
+              group={selectedGroup}
+              onBack={() => setSelectedGroup(null)}
+            />
+          )}
+
+          {/* هیچ انتخابی نشده */}
+          {!selectedUser && !selectedGroup && (
+            <NoConversationPlaceholder message="یک گفت‌وگو انتخاب کنید" />
+          )}
+
         </div>
+
       </BorderAnimatedContainer>
     </div>
   );
