@@ -2,10 +2,11 @@ import base64
 import uuid
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
 from asgiref.sync import sync_to_async
-from chat.models import MessageModels
 from django.utils.timezone import now
 from django.core.files.base import ContentFile
+from chat.models import MessageModels,ContactModels
 # ======================================================================================================================
 # ✅ لیست سراسری کاربران آنلاین
 online_users_list = set()
@@ -176,80 +177,155 @@ class ChatConsumer(AsyncWebsocketConsumer):
 online_users_map = {}
 # ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        self.user = self.scope["user"]
 
-        if not self.user.is_authenticated:
-            print("❌ WS rejected: user not authenticated")
+    online_users = {}
+
+    async def connect(self):
+        user = self.scope["user"]
+
+        if user.is_anonymous:
             await self.close()
             return
 
-        self.user_id = self.user.id
-        await self.accept()
-        print(f"✅ WS OnlineStatus connected: {self.channel_name} | user_id={self.user_id}")
+        self.user = user
+        self.user_id = user.id
+        self.group_name = f"user_{self.user_id}"
 
-        # افزایش تعداد اتصال برای کاربر
-        online_users_map[self.user_id] = online_users_map.get(self.user_id, 0) + 1
-        print(f"➕ User {self.user_id} online, online_users_map: {online_users_map}")
-
-        # اضافه کردن به گروه کانال
-        await self.channel_layer.group_add("online_users", self.channel_name)
-
-        # ارسال فوری آنلاین‌ها به این کانال و Broadcast
-        await self.send_online_users()
-        await self.broadcast_online_users()
-
-    async def disconnect(self, close_code):
-        if self.user.is_authenticated:
-            # کاهش تعداد اتصال کاربر
-            if self.user_id in online_users_map:
-                online_users_map[self.user_id] -= 1
-                if online_users_map[self.user_id] <= 0:
-                    del online_users_map[self.user_id]
-
-            print(f"➖ User {self.user_id} offline, online_users_map: {online_users_map}")
-
-            # Broadcast بعد از تغییر وضعیت
-            await self.broadcast_online_users()
-            await self.channel_layer.group_discard("online_users", self.channel_name)
-
-    async def receive(self, text_data=None, bytes_data=None):
-        """
-        اگر Frontend خواست آنلاین‌ها را بگیره
-        """
-        await self.send_online_users()
-        print("📡 Sent online users on request:", list(online_users_map.keys()))
-
-    async def send_online_users(self):
-        """
-        ارسال آنلاین‌ها به همین کانال
-        """
-        await self.send(text_data=json.dumps({
-            "type": "update_online_users",
-            "onlineUsers": list(online_users_map.keys()),
-        }))
-
-    async def broadcast_online_users(self):
-        """
-        ارسال آنلاین‌ها به همه کانال‌های گروه
-        """
-        online_list = list(online_users_map.keys())
-        await self.channel_layer.group_send(
-            "online_users",
-            {
-                "type": "update_online_users",
-                "onlineUsers": online_list,
-            }
+        await self.channel_layer.group_add(
+            self.group_name,
+            self.channel_name,
         )
-        print("📡 Broadcast online users:", online_list)
 
-    async def update_online_users(self, event):
-        """
-        دریافت پیام از گروه و ارسال به کانال
-        """
-        await self.send(text_data=json.dumps({
-            "type": "update_online_users",
-            "onlineUsers": event["onlineUsers"],
-        }))
-        print("📡 Sent updated onlineUsers to client:", event["onlineUsers"])
+        await self.accept()
+
+        self.online_users[self.user_id] = (
+            self.online_users.get(self.user_id, 0) + 1
+        )
+
+        contacts = await self.get_contacts()
+
+        await self.send(
+            text_data=json.dumps({
+                "type": "contacts_list",
+                "contacts": contacts,
+            })
+        )
+
+        if self.online_users[self.user_id] == 1:
+            await self.broadcast_presence(True)
+
+    async def disconnect(self, code):
+
+        await self.channel_layer.group_discard(
+            self.group_name,
+            self.channel_name,
+        )
+
+        if self.user_id not in self.online_users:
+            return
+
+        self.online_users[self.user_id] -= 1
+
+        if self.online_users[self.user_id] <= 0:
+            del self.online_users[self.user_id]
+
+            await self.broadcast_presence(False)
+
+    async def receive(self, text_data):
+
+        data = json.loads(text_data)
+
+        if data.get("type") == "get_contacts":
+            contacts = await self.get_contacts()
+
+            await self.send(
+                text_data=json.dumps({
+                    "type": "contacts_list",
+                    "contacts": contacts,
+                })
+            )
+
+    async def presence_update(self, event):
+
+        await self.send(
+            text_data=json.dumps({
+                "type": "presence_update",
+                "userId": event["userId"],
+                "online": event["online"],
+            })
+        )
+
+    # -------------------- توابع کمکی --------------------
+    @database_sync_to_async
+    def get_contacts(self):
+
+        contacts = (
+            ContactModels.objects
+            .filter(user=self.user)
+            .select_related(
+                "contact",
+                "contact__user_profile"
+            )
+        )
+
+        result = []
+
+        for item in contacts:
+            profile = item.contact.user_profile
+
+            result.append({
+
+                "id": item.contact.id,
+
+                "email": item.contact.email,
+
+                "name": profile.get_fullname(),
+
+                "image": profile.image.url if profile.image else None,
+
+                "online": item.contact.id in self.online_users,
+
+            })
+
+        return result
+
+    @database_sync_to_async
+    def get_watchers(self):
+
+        return list(
+
+            ContactModels.objects.filter(
+
+                contact_id=self.user_id
+
+            ).values_list(
+
+                "user_id",
+
+                flat=True,
+
+            )
+
+        )
+
+    async def broadcast_presence(self, online):
+
+        users = await self.get_watchers()
+
+        for uid in users:
+            await self.channel_layer.group_send(
+
+                f"user_{uid}",
+
+                {
+
+                    "type": "presence_update",
+
+                    "userId": self.user_id,
+
+                    "online": online,
+
+                },
+
+            )
 # ======================================================================================================================

@@ -107,11 +107,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 # ======================================================================================================================
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
-    first_name = serializers.CharField(required=False, allow_blank=True)
-    last_name = serializers.CharField(required=False, allow_blank=True)
-    image = serializers.ImageField(required=False, allow_null=True)
+    id = serializers.IntegerField(source="user.id", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:
         model = Profile
-        fields = ['first_name', 'last_name', 'image']
+        fields = [
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "image",
+        ]
 # ======================================================================================================================

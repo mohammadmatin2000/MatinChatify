@@ -77,9 +77,12 @@ class Profile(models.Model):
     updated_date = models.DateTimeField(auto_now=True)
 
     def get_fullname(self):
-        if self.first_name or self.last_name:
-            return self.first_name + " " + self.last_name
-        return "کاربر جدید"
+        first = self.first_name or ""
+        last = self.last_name or ""
+
+        fullname = f"{first} {last}".strip()
+
+        return fullname if fullname else "کاربر جدید"
 # ======================================================================================================================
 @receiver(post_save, sender=User)
 def create_profile(sender, instance, created, **kwargs):

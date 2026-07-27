@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import axios from "axios";
-import { io } from "socket.io-client";
 import toast from "react-hot-toast";
 
 export const useAuthStore = create((set, get) => ({
@@ -70,13 +69,8 @@ export const useAuthStore = create((set, get) => ({
     } finally {
       localStorage.removeItem("accessToken");
       set({ authUser: null });
-      if (get().socket) get().socket.disconnect();
     }
   },
 
-  // 🌐 اتصال به سوکت (درصورت نیاز)
-  connectSocket: () => {
-    const socket = io("http://127.0.0.1:8000");
-    set({ socket });
-  },
+
 }));

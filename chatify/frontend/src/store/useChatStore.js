@@ -25,6 +25,8 @@ export const useChatStore = create((set, get) => ({
     pendingEdits: {},
     pendingDeletes: new Set(),
     onlineUsers: [],
+    searchResults: [],
+    isSearching: false,
 
     // ---------------- ⚡️ Online Users ----------------
     setOnlineUsers: (list) => {
@@ -129,6 +131,64 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    searchUsers: async (query) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) return;
+        if (!query.trim()) {
+            set({searchResults: []});
+            return;
+        }
+        set({isSearching: true});
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/search-users/?q=${encodeURIComponent(query)}`, {
+                headers: {Authorization: `Bearer ${token}`},
+            });
+            const data = await res.json();
+            set({searchResults: data});
+        } catch {
+            toast.error("خطا در جستجوی کاربران");
+        } finally {
+            set({isSearching: false});
+        }
+    },
+
+    clearSearch: () => set({searchResults: []}),
+
+    addContact: async (contactId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) return toast.error("No access token found");
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/contacts/`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({contact: contactId}),
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                const msg = err.contact?.[0] || "خطا در افزودن مخاطب";
+                toast.error(msg);
+                return false;
+            }
+
+            toast.success("مخاطب با موفقیت اضافه شد");
+
+            set((state) => ({
+                searchResults: state.searchResults.map((u) =>
+                    u.id === contactId ? {...u, is_contact: true} : u
+                ),
+            }));
+
+            get().getAllContacts();
+            return true;
+        } catch {
+            toast.error("خطا در افزودن مخاطب");
+            return false;
+        }
+    },
 
     // ---------------- 💬 Messages ----------------
     getMessagesByUserId: async () => {
@@ -346,6 +406,33 @@ export const useChatStore = create((set, get) => ({
             socket.send(JSON.stringify({type: "delete_message", messageId}));
         }
     },
+
+    deleteContact: async (contactRecordId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) return toast.error("No access token found");
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/contacts/${contactRecordId}/`, {
+                method: "DELETE",
+                headers: {Authorization: `Bearer ${token}`},
+            });
+
+            if (!res.ok) {
+                toast.error("خطا در حذف مخاطب");
+                return false;
+            }
+
+            set((state) => ({
+                allContacts: state.allContacts.filter((c) => c.raw?.id !== contactRecordId),
+            }));
+
+            toast.success("مخاطب حذف شد");
+            return true;
+        } catch {
+            toast.error("خطا در حذف مخاطب");
+            return false;
+        }
+    },
+
 
     logout: () => {
         localStorage.removeItem("accessToken");
