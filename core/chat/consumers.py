@@ -6,7 +6,7 @@ from channels.db import database_sync_to_async
 from asgiref.sync import sync_to_async
 from django.utils.timezone import now
 from django.core.files.base import ContentFile
-from chat.models import MessageModels,ContactModels
+from chat.models import MessageModels, ContactModels
 # ======================================================================================================================
 # ✅ لیست سراسری کاربران آنلاین
 online_users_list = set()
@@ -106,7 +106,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "createdAt": str(saved.created_date),
         }
 
-        # broadcast به گروه مشترک
+        # broadcast به گروه مشترک (برای کسی که چت رو باز کرده)
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -115,6 +115,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
         print(f"✅ Message saved and broadcasted: {saved.id}")
+
+        # ✅ اطلاع‌رسانی سراسری به گروه‌های شخصی فرستنده و گیرنده
+        # (برای آپدیت لحظه‌ای «آخرین پیام» توی لیست چت‌ها، حتی اگه چت باز نباشه)
+        for uid in {sender_id, receiver_id}:
+            await self.channel_layer.group_send(
+                f"user_{uid}",
+                {
+                    "type": "new_message_notify",
+                    "message": message_data,
+                }
+            )
 
     async def chat_message_broadcast(self, event):
         # ارسال به کل اعضای گروه
@@ -142,6 +153,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
             print(f"✏️ Message edited: {message_id}")
+
+            # ✅ اطلاع‌رسانی برای آپدیت آخرین پیام در سایدبار (اگه ویرایش‌شده آخرین پیام بوده)
+            for uid in {msg_obj.sender_id, msg_obj.receiver_id}:
+                await self.channel_layer.group_send(
+                    f"user_{uid}",
+                    {
+                        "type": "message_edit_notify",
+                        "messageId": message_id,
+                        "newText": new_text,
+                    }
+                )
         except MessageModels.DoesNotExist:
             print(f"⚠️ Message to edit not found: {message_id}")
 
@@ -157,6 +179,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         message_id = data.get("messageId")
         if not message_id:
             return
+
+        try:
+            msg_obj = await sync_to_async(MessageModels.objects.get)(id=message_id)
+            sender_id, receiver_id = msg_obj.sender_id, msg_obj.receiver_id
+        except MessageModels.DoesNotExist:
+            return
+
         await sync_to_async(MessageModels.objects.filter(id=message_id).delete)()
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -167,14 +196,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
         print(f"🗑️ Message deleted: {message_id}")
 
+        # ✅ اطلاع‌رسانی برای آپدیت آخرین پیام در سایدبار
+        for uid in {sender_id, receiver_id}:
+            await self.channel_layer.group_send(
+                f"user_{uid}",
+                {
+                    "type": "message_delete_notify",
+                    "messageId": message_id,
+                }
+            )
+
     async def delete_message_broadcast(self, event):
         await self.send(text_data=json.dumps({
             "type": "delete_message",
             "messageId": event["messageId"]
         }))
-# ======================================================================================================================
-# نگهداری تعداد اتصال هر کاربر
-online_users_map = {}
 # ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
 
@@ -255,6 +291,34 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             })
         )
 
+    # -------------------- دریافت اعلان پیام جدید و فوروارد به کلاینت --------------------
+    async def new_message_notify(self, event):
+        await self.send(
+            text_data=json.dumps({
+                "type": "new_message_notify",
+                "message": event["message"],
+            })
+        )
+
+    # -------------------- دریافت اعلان ویرایش پیام و فوروارد به کلاینت --------------------
+    async def message_edit_notify(self, event):
+        await self.send(
+            text_data=json.dumps({
+                "type": "message_edit_notify",
+                "messageId": event["messageId"],
+                "newText": event["newText"],
+            })
+        )
+
+    # -------------------- دریافت اعلان حذف پیام و فوروارد به کلاینت --------------------
+    async def message_delete_notify(self, event):
+        await self.send(
+            text_data=json.dumps({
+                "type": "message_delete_notify",
+                "messageId": event["messageId"],
+            })
+        )
+
     # -------------------- توابع کمکی --------------------
     @database_sync_to_async
     def get_contacts(self):
@@ -267,6 +331,21 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
                 "contact__user_profile"
             )
         )
+
+        result = []
+
+        for item in contacts:
+            profile = getattr(item.contact, "user_profile", None)
+
+            result.append({
+                "id": item.contact.id,
+                "email": item.contact.email,
+                "name": profile.get_fullname() if profile else item.contact.email,
+                "image": profile.image.url if (profile and profile.image) else None,
+                "online": item.contact.id in self.online_users,
+            })
+
+        return result
 
         result = []
 

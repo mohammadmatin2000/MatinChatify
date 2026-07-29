@@ -7,6 +7,7 @@ function ActiveTabSwitch() {
     { key: "chats", label: "گفتگوها" },
     { key: "contacts", label: "مخاطبین" },
     { key: "groups", label: "گروه‌ها" },
+    { key: "calls", label: "تماس‌ها" },
   ];
 
   return (

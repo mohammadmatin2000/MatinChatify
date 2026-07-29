@@ -17,6 +17,13 @@ class GroupMemberViewSet(viewsets.ModelViewSet):
     serializer_class = GroupMemberSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def perform_create(self, serializer):
+        # اگه فرانت user نفرستاده باشه (مثلاً موقع افزودن خود سازنده)، خودمون می‌ذاریم
+        if "user" not in serializer.validated_data:
+            serializer.save(user=self.request.user)
+        else:
+            serializer.save()
+
 # پیام‌ها بر اساس گروه
 class GroupMessageViewSet(viewsets.ModelViewSet):
     serializer_class = GroupMessageSerializer

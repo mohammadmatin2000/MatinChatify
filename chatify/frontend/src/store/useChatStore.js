@@ -11,13 +11,22 @@ const safeDate = (value) => {
     return isNaN(d.getTime()) ? new Date() : d;
 };
 
+// ======================================================================================================================
+// ✅ اتصال WebSocket سراسری وضعیت آنلاین — فقط یک نمونه برای کل اپ
+// (عمداً بیرون از zustand state نگه داشته می‌شه چون خود instance نیازی نیست reactive باشه)
+// ======================================================================================================================
+let onlineStatusSocket = null;
+let onlineStatusReconnectTimer = null;
+let onlineStatusConnecting = false;
+const messageEventListeners = new Set(); // برای new_message_notify / edit / delete
+
 export const useChatStore = create((set, get) => ({
     allContacts: [],
     chats: [],
     messages: [],
     activeTab: "chats",
     selectedUser: null,
-    selectedGroup: null, // ✅ اضافه شد
+    selectedGroup: null,
     socket: null,
     isUsersLoading: false,
     isMessagesLoading: false,
@@ -27,6 +36,112 @@ export const useChatStore = create((set, get) => ({
     onlineUsers: [],
     searchResults: [],
     isSearching: false,
+
+    // ---------------- 🌐 اتصال مرکزی وضعیت آنلاین ----------------
+    connectOnlineStatusSocket: () => {
+        // اگه از قبل وصله یا در حال وصل شدنه، دوباره وصل نشو
+        if (
+            onlineStatusConnecting ||
+            (onlineStatusSocket &&
+                (onlineStatusSocket.readyState === WebSocket.OPEN ||
+                    onlineStatusSocket.readyState === WebSocket.CONNECTING))
+        ) {
+            return;
+        }
+
+        const token = localStorage.getItem("accessToken");
+        if (!token) return;
+
+        onlineStatusConnecting = true;
+
+        const socket = new WebSocket(`ws://localhost:8000/ws/online-status/?token=${token}`);
+        onlineStatusSocket = socket;
+
+        socket.onopen = () => {
+            onlineStatusConnecting = false;
+            console.log("🟢 Online-status WS connected (central)");
+            socket.send(JSON.stringify({type: "get_contacts"}));
+        };
+
+        socket.onmessage = (event) => {
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            switch (data.type) {
+                case "contacts_list": {
+                    const onlineIds = data.contacts.filter((c) => c.online).map((c) => String(c.id));
+                    get().setOnlineUsers(onlineIds);
+                    break;
+                }
+
+                case "presence_update": {
+                    if (data.online) {
+                        get().addOnlineUser(String(data.userId));
+                    } else {
+                        get().removeOnlineUser(String(data.userId));
+                    }
+                    break;
+                }
+
+                case "new_message_notify":
+                case "message_edit_notify":
+                case "message_delete_notify": {
+                    // این‌ها رو به هرکسی که subscribe کرده (مثلاً ChatsList) پاس بده
+                    messageEventListeners.forEach((cb) => {
+                        try {
+                            cb(data);
+                        } catch (err) {
+                            console.error("message listener error:", err);
+                        }
+                    });
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        };
+
+        socket.onerror = (err) => {
+            console.error("❌ Online-status WS error", err);
+        };
+
+        socket.onclose = (event) => {
+            onlineStatusConnecting = false;
+            console.log("🔴 Online-status WS closed (central)", event.code);
+            onlineStatusSocket = null;
+
+            // فقط اگه هنوز توکن داریم (یعنی لاگ‌اوت نکردیم) دوباره وصل شو
+            const token = localStorage.getItem("accessToken");
+            if (token) {
+                clearTimeout(onlineStatusReconnectTimer);
+                onlineStatusReconnectTimer = setTimeout(() => {
+                    get().connectOnlineStatusSocket();
+                }, 3000);
+            }
+        };
+    },
+
+    disconnectOnlineStatusSocket: () => {
+        clearTimeout(onlineStatusReconnectTimer);
+        onlineStatusReconnectTimer = null;
+        onlineStatusConnecting = false;
+        if (onlineStatusSocket) {
+            onlineStatusSocket.onclose = null; // جلوگیری از reconnect خودکار موقع logout
+            onlineStatusSocket.close();
+            onlineStatusSocket = null;
+        }
+    },
+
+    // ✅ برای کامپوننت‌هایی مثل ChatsList که نیاز به رویدادهای پیام دارن (بدون ساختن socket جدا)
+    addMessageEventListener: (cb) => {
+        messageEventListeners.add(cb);
+        return () => messageEventListeners.delete(cb);
+    },
 
     // ---------------- ⚡️ Online Users ----------------
     setOnlineUsers: (list) => {
@@ -48,11 +163,7 @@ export const useChatStore = create((set, get) => ({
         })),
 
     // ---------------- ⚙️ UI Settings ----------------
-
-
-    // ✅ اصلاح: لاگ اضافه شد تا مقدار activeTab بررسی شود
     setActiveTab: (tab) => {
-        console.log("Setting activeTab:", tab);
         set({activeTab: tab});
     },
 
@@ -61,7 +172,6 @@ export const useChatStore = create((set, get) => ({
         const {authUser} = useAuthStore.getState();
         if (!authUser?.id) return toast.error("Auth user not loaded yet");
 
-        // ⚠️ قبل از ساخت WebSocket جدید، WS قبلی را ببند
         get().unsubscribeFromMessages();
 
         if (!user) {
@@ -70,7 +180,6 @@ export const useChatStore = create((set, get) => ({
         }
 
         const userId = user._id || user.raw?.user || user.email;
-        const roomName = [authUser.id, userId].sort().join("_");
 
         user._id = userId;
         user.name = user.name || `Contact ${user.raw?.contact || user._id}`;
@@ -78,22 +187,23 @@ export const useChatStore = create((set, get) => ({
 
         set({
             selectedUser: user,
-            selectedGroup: null, // ✅ گروه پاک می‌شود
+            selectedGroup: null,
             messages: [],
         });
 
         get().getMessagesByUserId();
-        get().subscribeToMessages(roomName);
 
+        // ✅ فقط آیدی خام طرف مقابل رو می‌فرستیم — بک‌اند خودش با sorted([my_id, userId])
+        // نام روم یکتا و ثابت می‌سازه. ترکیب کردنش اینجا باعث دابل‌ترکیب و روم اشتباه می‌شد.
+        get().subscribeToMessages(userId);
     },
-    setSelectedGroup: (group) => {
-        // ❗ WS خصوصی را ببند
-        get().unsubscribeFromMessages();
 
+    setSelectedGroup: (group) => {
+        get().unsubscribeFromMessages();
         set({
             selectedGroup: group,
-            selectedUser: null, // ✅ یوزر پاک می‌شود
-            messages: [], // پیام گروه داخل GroupChatContainer مدیریت می‌شود
+            selectedUser: null,
+            messages: [],
         });
     },
 
@@ -121,6 +231,7 @@ export const useChatStore = create((set, get) => ({
                     _id: c.contact || c.user,
                     email: c.contact_email || null,
                     name: c.name || c.contact_email || `Contact ${c.contact || c.user}`,
+                    profile: c.profile || null,
                     raw: c,
                 })),
             });
@@ -131,6 +242,7 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    // ---------------- 🔍 Search & Add Contact ----------------
     searchUsers: async (query) => {
         const token = localStorage.getItem("accessToken");
         if (!token) return;
@@ -186,6 +298,32 @@ export const useChatStore = create((set, get) => ({
             return true;
         } catch {
             toast.error("خطا در افزودن مخاطب");
+            return false;
+        }
+    },
+
+    deleteContact: async (contactRecordId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) return toast.error("No access token found");
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/contacts/${contactRecordId}/`, {
+                method: "DELETE",
+                headers: {Authorization: `Bearer ${token}`},
+            });
+
+            if (!res.ok) {
+                toast.error("خطا در حذف مخاطب");
+                return false;
+            }
+
+            set((state) => ({
+                allContacts: state.allContacts.filter((c) => c.raw?.id !== contactRecordId),
+            }));
+
+            toast.success("مخاطب حذف شد");
+            return true;
+        } catch {
+            toast.error("خطا در حذف مخاطب");
             return false;
         }
     },
@@ -264,7 +402,7 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ---------------- 🧠 WebSocket ----------------
+    // ---------------- 🧠 WebSocket چت (فقط برای مکالمه‌ی باز) ----------------
     subscribeToMessages: (roomName) => {
         if (!roomName) return;
         const token = localStorage.getItem("accessToken");
@@ -280,14 +418,9 @@ export const useChatStore = create((set, get) => ({
                 const data = JSON.parse(event.data);
                 if (!data) return;
 
-                if (data.type === "update_online_users") {
-                    get().setOnlineUsers(data.onlineUsers);
-                    return;
-                }
-
-                if (data.type === "user_status") {
-                    if (data.isOnline) get().addOnlineUser(data.userId);
-                    else get().removeOnlineUser(data.userId);
+                // ✅ پیام تاییدیه‌ی اتصال (نه یه پیام واقعی) — نباید وارد لیست messages بشه
+                // چون _id/tempId نداره و باعث key تکراری/undefined توی React می‌شه
+                if (data.type === "connection") {
                     return;
                 }
 
@@ -349,6 +482,10 @@ export const useChatStore = create((set, get) => ({
                             return {messages: updatedMessages};
                         }
 
+                        // ✅ جلوگیری از تکرار پیام (اگه به هر دلیلی همون _id از قبل توی لیست بود)
+                        const alreadyThere = state.messages.some((m) => m._id === newMessage._id);
+                        if (alreadyThere) return {};
+
                         return {messages: [...state.messages, newMessage]};
                     });
                 }
@@ -407,39 +544,16 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    deleteContact: async (contactRecordId) => {
-        const token = localStorage.getItem("accessToken");
-        if (!token) return toast.error("No access token found");
-        try {
-            const res = await fetch(`${API_BASE_URL}/chat/contacts/${contactRecordId}/`, {
-                method: "DELETE",
-                headers: {Authorization: `Bearer ${token}`},
-            });
-
-            if (!res.ok) {
-                toast.error("خطا در حذف مخاطب");
-                return false;
-            }
-
-            set((state) => ({
-                allContacts: state.allContacts.filter((c) => c.raw?.id !== contactRecordId),
-            }));
-
-            toast.success("مخاطب حذف شد");
-            return true;
-        } catch {
-            toast.error("خطا در حذف مخاطب");
-            return false;
-        }
-    },
-
-
     logout: () => {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         localStorage.removeItem("isSoundEnabled");
+
         const socket = get().socket;
         if (socket) socket.close();
+
+        get().disconnectOnlineStatusSocket();
+
         set({
             allContacts: [],
             chats: [],
@@ -447,6 +561,7 @@ export const useChatStore = create((set, get) => ({
             selectedUser: null,
             socket: null,
             onlineUsers: [],
+            searchResults: [],
         });
     },
 }));

@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { useChatStore } from "./useChatStore";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
   isCheckingAuth: true,
-  socket: null,
 
   // ✅ ایجاد instance از axios
   axiosInstance: axios.create({
@@ -30,7 +30,9 @@ export const useAuthStore = create((set, get) => ({
 
       console.log("✅ User verified:", res.data);
       set({ authUser: res.data });
-      get().connectSocket();
+
+      // ✅ اتصال مرکزی وضعیت آنلاین (فقط یک‌بار، idempotent)
+      useChatStore.getState().connectOnlineStatusSocket();
     } catch (error) {
       console.error("❌ Auth check failed:", error);
       localStorage.removeItem("accessToken");
@@ -52,7 +54,10 @@ export const useAuthStore = create((set, get) => ({
       localStorage.setItem("accessToken", access);
       set({ authUser: user });
       toast.success("✅ ورود موفق!");
-      get().connectSocket();
+
+      // ✅ اتصال مرکزی وضعیت آنلاین
+      useChatStore.getState().connectOnlineStatusSocket();
+
       return user;
     } catch (error) {
       toast.error("❌ ورود ناموفق بود");
@@ -69,8 +74,9 @@ export const useAuthStore = create((set, get) => ({
     } finally {
       localStorage.removeItem("accessToken");
       set({ authUser: null });
+
+      // ✅ بستن کامل اتصال مرکزی + پاکسازی state چت
+      useChatStore.getState().logout();
     }
   },
-
-
 }));

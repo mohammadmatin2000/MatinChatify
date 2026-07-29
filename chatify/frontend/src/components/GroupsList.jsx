@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useChatStore } from "../store/useChatStore";
 
-function GroupsList() {
+function GroupsList({ searchQuery = "" }) {
   const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const accessToken = localStorage.getItem("accessToken");
@@ -39,9 +39,21 @@ function GroupsList() {
       </div>
     );
 
+  // ✅ فیلتر بر اساس سرچ (اسم گروه)
+  const q = searchQuery.trim().toLowerCase();
+  const filteredGroups = q
+    ? groups.filter((g) => (g.name || "").toLowerCase().includes(q))
+    : groups;
+
+  if (filteredGroups.length === 0) {
+    return (
+      <div className="text-center py-8 text-slate-400 text-sm">چیزی با این عبارت پیدا نشد</div>
+    );
+  }
+
   return (
     <div className="space-y-3 px-2">
-      {groups.map((g) => {
+      {filteredGroups.map((g) => {
         // URL آواتار گروه
         const groupAvatarUrl = g.avatar
           ? g.avatar.startsWith("http")
@@ -51,7 +63,7 @@ function GroupsList() {
 
         return (
           <div
-            key={g._id}
+            key={g.id}
             onClick={() => setSelectedGroup(g)}
             className="flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:bg-gradient-to-r hover:from-cyan-600/20 hover:to-blue-500/20 shadow-sm hover:shadow-lg"
           >
@@ -65,7 +77,7 @@ function GroupsList() {
                   onError={(e) => (e.target.src = "/avatar.png")}
                 />
               ) : (
-                <span>{g.name[0].toUpperCase()}</span>
+                <span>{g.name?.[0]?.toUpperCase() || "?"}</span>
               )}
             </div>
 
