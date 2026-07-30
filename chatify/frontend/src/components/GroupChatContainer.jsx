@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
@@ -28,9 +29,15 @@ function GroupChatContainer({ group, onBack }) {
   // هم کرش نکنه، و return null رو ببر بعد از همه‌ی هوک‌ها (پایین فایل).
   const groupId = group?._id || group?.id;
   const accessToken = localStorage.getItem("accessToken");
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
+  // ✅ FIX: قبلاً اینجا با JSON.parse(localStorage.getItem("authUser")) خونده
+  // می‌شد که همیشه {} خالی برمی‌گردوند (چون useAuthStore با zustand persist
+  // اطلاعات رو زیر یه کلید دیگه ذخیره می‌کنه، نه مستقیماً "authUser"). نتیجه‌ش
+  // این بود که authUser?.id همیشه undefined بود و isOwner برای هیچ پیامی true
+  // نمی‌شد — نه رنگ آبی، نه منوی ویرایش/حذف. همون‌طور که ChatContainer.jsx
+  // (نسخه‌ی سالم چت خصوصی) درست انجامش می‌ده، از خود هوک useAuthStore می‌خونیم.
+  const { authUser } = useAuthStore();
 
-  const { allContacts, getAllContacts } = useChatStore();
+  const { allContacts, getAllContacts, onlineUsers } = useChatStore();
 
   // ---- اطلاعات گروه (قابل آپدیت بعد از ویرایش) ----
   const [localGroup, setLocalGroup] = useState(group || {});
@@ -40,6 +47,8 @@ function GroupChatContainer({ group, onBack }) {
   const [isMessagesLoading, setIsMessagesLoading] = useState(true);
   const [text, setText] = useState("");
   const [activeMenu, setActiveMenu] = useState(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingText, setEditingText] = useState("");
   const messageEndRef = useRef(null);
   const socketRef = useRef(null);
 
@@ -132,6 +141,19 @@ function GroupChatContainer({ group, onBack }) {
       if (data.type === "error") {
         toast.error(data.message || "ارسال پیام با خطا مواجه شد");
       }
+
+      // ✅ همگام‌سازی ویرایش/حذف پیام که از سرور broadcast می‌شه
+      if (data.type === "edit_message") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.messageId ? { ...m, text: data.newText, edited: true } : m
+          )
+        );
+      }
+
+      if (data.type === "delete_message") {
+        setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
+      }
     };
 
     socketRef.current.onerror = (err) => console.error("❌ WS Error:", err);
@@ -180,12 +202,54 @@ function GroupChatContainer({ group, onBack }) {
   }, [messages]);
 
   // -------------------------
-  // ارسال پیام
+  // ارسال پیام (متن و/یا عکس)
   // -------------------------
-  const sendMessage = () => {
-    if (!text.trim() || !socketRef.current) return;
-    socketRef.current.send(JSON.stringify({ action: "message", text }));
+  const sendMessage = async (imageFile) => {
+    if (!text.trim() && !imageFile) return;
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("اتصال چت برقرار نیست، لطفاً صبر کن یا صفحه رو رفرش کن");
+      return;
+    }
+
+    let imageBase64 = null;
+    if (imageFile) {
+      try {
+        imageBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(imageFile);
+        });
+      } catch (err) {
+        console.error("❌ خطا در خواندن فایل تصویر:", err);
+        toast.error("خطا در پردازش تصویر");
+        return;
+      }
+    }
+
+    socketRef.current.send(
+      JSON.stringify({ action: "message", text: text.trim(), image: imageBase64 })
+    );
     setText("");
+  };
+
+  // -------------------------
+  // ویرایش پیام (فقط نویسنده‌ی خودش)
+  // -------------------------
+  const handleEditMessage = (messageId, newText) => {
+    const trimmed = (newText || "").trim();
+    if (!trimmed || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(
+      JSON.stringify({ action: "edit_message", messageId, newText: trimmed })
+    );
+  };
+
+  // -------------------------
+  // حذف پیام (فقط نویسنده‌ی خودش)
+  // -------------------------
+  const handleDeleteMessage = (messageId) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({ action: "delete_message", messageId }));
   };
 
   // -------------------------
@@ -317,6 +381,11 @@ function GroupChatContainer({ group, onBack }) {
 
   const resolveMemberAvatar = (image) => {
     if (!image) return "/avatar.png";
+    return image.startsWith("http") ? image : `${API_BASE_URL}${image}`;
+  };
+
+  const resolveMessageImage = (image) => {
+    if (!image) return null;
     return image.startsWith("http") ? image : `${API_BASE_URL}${image}`;
   };
 
@@ -461,25 +530,36 @@ function GroupChatContainer({ group, onBack }) {
                 {members.map((m) => {
                   const isOwnerRow = m.user === localGroup.owner?.id;
                   const isConfirmingRemove = confirmRemoveId === m.id;
+                  // ✅ onlineUsers توسط سوکت مرکزی وضعیت آنلاین (useChatStore)
+                  // پر می‌شه و شامل id هاست به‌صورت string.
+                  const isOnline = onlineUsers.includes(String(m.user));
 
                   return (
                     <div
                       key={m.id}
                       className="group/member flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/40 transition-colors"
                     >
-                      <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
                         <img
                           src={resolveMemberAvatar(m.user_detail?.image)}
                           alt={m.user_detail?.name}
                           className="w-full h-full object-cover"
                           onError={(e) => (e.target.src = "/avatar.png")}
                         />
+                        {isOnline && (
+                          <span
+                            className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-800"
+                            title="آنلاین"
+                          />
+                        )}
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="text-slate-200 text-sm truncate">
                           {m.user_detail?.name || m.user_detail?.email}
                         </span>
-                        <span className="text-slate-500 text-xs truncate">{m.user_detail?.email}</span>
+                        <span className={`text-xs truncate ${isOnline ? "text-green-400" : "text-slate-500"}`}>
+                          {isOnline ? "آنلاین" : m.user_detail?.email}
+                        </span>
                       </div>
 
                       {m.role === "admin" && (
@@ -632,11 +712,15 @@ function GroupChatContainer({ group, onBack }) {
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => {
-              // ✅ FIX: مقایسه رو type-safe کردیم (مثلاً اگه یکی id رو به شکل
-              // string و اون یکی number ذخیره کرده باشه، قبلاً false می‌شد
-              // حتی برای پیام‌های خود کاربر).
+              // ✅ FIX: مقاوم در برابر دو حالت ممکن از بک‌اند —
+              // هم وقتی sender/author یه آبجکت کامله (مثل پیام‌های زنده‌ی WS)
+              // هم وقتی فقط یه عدد خامه (مثلاً id کاربر از یه سریالایزر دیگه).
+              // مقایسه هم به‌صورت String انجام می‌شه که فرق نوع (string/number) مشکل نسازه.
+              const rawSenderId = msg.sender?.id ?? msg.sender ?? msg.author?.id ?? msg.author;
               const isOwner =
-                String(msg.sender?.id ?? msg.author?.id ?? "") === String(authUser?.id ?? "");
+                rawSenderId !== undefined &&
+                rawSenderId !== null &&
+                String(rawSenderId) === String(authUser?.id ?? "");
               const senderInfo = msg.sender || msg.author;
               return (
                 <div key={msg.id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
@@ -649,7 +733,18 @@ function GroupChatContainer({ group, onBack }) {
                         {senderInfo?.name || senderInfo?.email}
                       </p>
                     )}
-                    <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                    {msg.image && (
+                      <img
+                        src={resolveMessageImage(msg.image)}
+                        alt="تصویر پیام"
+                        className="max-w-[240px] rounded-lg mb-2 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(resolveMessageImage(msg.image), "_blank");
+                        }}
+                      />
+                    )}
+                    {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
                     <p className="text-xs opacity-70 mt-1">
                       {new Date(msg.created_at || msg.created_date).toLocaleTimeString([], {
                         hour: "2-digit",
@@ -662,7 +757,12 @@ function GroupChatContainer({ group, onBack }) {
                         <button
                           className="px-3 py-1 text-xs text-cyan-200 hover:bg-slate-600"
                           onClick={() => {
-                            setText(msg.text);
+                            // ✅ FIX: قبلاً فقط متن رو توی اینپوت می‌ذاشت که موقع
+                            // ارسال یه پیام جدید می‌شد، نه ویرایش پیام قبلی.
+                            // الان از حالت ویرایش inline استفاده می‌کنیم که
+                            // MessageInput از قبل ازش پشتیبانی می‌کنه.
+                            setEditingMessageId(msg.id);
+                            setEditingText(msg.text);
                             setActiveMenu(null);
                           }}
                         >
@@ -670,7 +770,12 @@ function GroupChatContainer({ group, onBack }) {
                         </button>
                         <button
                           className="px-3 py-1 text-xs text-red-400 hover:bg-slate-600"
-                          onClick={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
+                          onClick={() => {
+                            // ✅ FIX: قبلاً فقط از state لوکال حذف می‌کرد و به سرور
+                            // اطلاع نمی‌داد؛ با رفرش صفحه پیام دوباره برمی‌گشت.
+                            handleDeleteMessage(msg.id);
+                            setActiveMenu(null);
+                          }}
                         >
                           حذف
                         </button>
@@ -685,7 +790,16 @@ function GroupChatContainer({ group, onBack }) {
         )}
       </div>
 
-      <MessageInput text={text} setText={setText} sendMessage={sendMessage} />
+      <MessageInput
+        text={text}
+        setText={setText}
+        editingMessageId={editingMessageId}
+        editingText={editingText}
+        setEditingMessageId={setEditingMessageId}
+        setEditingText={setEditingText}
+        sendMessage={sendMessage}
+        editMessage={handleEditMessage}
+      />
     </div>
   );
 }

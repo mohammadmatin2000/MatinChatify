@@ -11,16 +11,18 @@ export default function MessageInput({
   setEditingMessageId,
   setEditingText,
   sendMessage: sendMessageProp, // ✅ اگه از بیرون پاس داده بشه (مثلاً از GroupChatContainer)، همینو استفاده می‌کنیم
+  editMessage: editMessageProp, // ✅ همینطور برای ویرایش — اگه پاس داده بشه (حالت گروه)، اولویت داره
 }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [imageFile, setImageFile] = useState(null);
   const fileInputRef = useRef(null);
 
   // نسخه‌ی پیش‌فرض store (مخصوص چت خصوصی)
-  const { sendMessage: storeSendMessage, editMessage, isSoundEnabled } = useChatStore();
+  const { sendMessage: storeSendMessage, editMessage: storeEditMessage, isSoundEnabled } = useChatStore();
 
-  // ✅ اگه prop پاس داده شده باشه (حالت گروه)، همون اولویت داره؛ وگرنه از store استفاده می‌شه (چت خصوصی)
-  const doSendMessage = sendMessageProp || storeSendMessage;
+  // ✅ FIX: قبلاً همیشه editMessage (چت خصوصی) از store استفاده می‌شد، حتی
+  // توی گروه — که یعنی ویرایش پیام گروه هیچ‌وقت واقعاً به سرور گروه نمی‌رفت.
+  const doEditMessage = editMessageProp || storeEditMessage;
 
   useEffect(() => {
     if (editingMessageId) {
@@ -34,12 +36,14 @@ export default function MessageInput({
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
     if (editingMessageId) {
-      editMessage(editingMessageId, text, imageFile);
+      doEditMessage(editingMessageId, text, imageFile);
       setEditingMessageId(null);
       setEditingText("");
     } else if (sendMessageProp) {
-      // ✅ حالت گروه: تابع gروه هیچ آرگومانی نمی‌گیره، خودش از state داخلی می‌خونه
-      sendMessageProp();
+      // ✅ FIX: قبلاً اینجا sendMessageProp() بدون هیچ آرگومانی صدا زده می‌شد،
+      // برای همین عکسی که کاربر انتخاب کرده بود هیچ‌وقت به GroupChatContainer
+      // نمی‌رسید و گم می‌شد. الان imageFile رو پاس می‌دیم.
+      sendMessageProp(imageFile);
     } else {
       // چت خصوصی
       storeSendMessage({ text: text.trim(), image: imageFile });
