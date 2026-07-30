@@ -301,22 +301,21 @@ function ProfileHeader({onNewGroup}) {
 
                 <div className="flex items-center gap-4 relative z-50">
                     <button
-                        onClick={handleToggleSound}
+                        onClick={handleLogout}
                         className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
-                        title={isSoundEnabled ? "قطع صدا" : "پخش صدا"}
+                        title="خروج از حساب"
                     >
-                        {isSoundEnabled ? <Volume2Icon className="size-5"/> : <VolumeOffIcon className="size-5"/>}
+                        <LogOutIcon className="size-5"/>
                     </button>
-
 
                     {/* دکمه + و منو ساخت گروه/مخاطب */}
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setShowNewMenu((prev) => !prev)}
-                            className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
+                            className="text-slate-300 hover:text-cyan-400 hover:bg-slate-700/60 transition-colors flex items-center justify-center rounded-full size-8"
                             title="ساخت جدید"
                         >
-                            <PlusIcon className="size-5"/>
+                            <PlusIcon className="size-6"/>
                         </button>
                     </div>
 
@@ -325,19 +324,19 @@ function ProfileHeader({onNewGroup}) {
                             {/* overlay برای بستن منو با کلیک بیرون */}
                             <div className="fixed inset-0 z-40" onClick={() => setShowNewMenu(false)}/>
                             <div
-                                className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-slate-800 rounded-lg shadow-lg w-56 max-w-[calc(100%-1.5rem)] flex flex-col z-50 overflow-hidden border border-slate-700/50">
+                                className="absolute top-full left-1/2 -translate-x-1/3 mt-2 bg-slate-800 rounded-lg shadow-lg w-56 flex flex-col z-50 overflow-hidden border border-slate-700/50">
                                 <button
                                     onClick={openCreateGroup}
-                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right"
+                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right whitespace-nowrap"
                                 >
-                                    <UsersIcon className="w-4 h-4 text-cyan-400"/>
+                                    <UsersIcon className="w-4 h-4 text-cyan-400 shrink-0"/>
                                     ساخت گروه
                                 </button>
                                 <button
                                     onClick={openAddContact}
-                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50"
+                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
                                 >
-                                    <UserPlus className="w-4 h-4 text-cyan-400"/>
+                                    <UserPlus className="w-4 h-4 text-cyan-400 shrink-0"/>
                                     ساخت مخاطب
                                 </button>
                             </div>
@@ -345,11 +344,11 @@ function ProfileHeader({onNewGroup}) {
                     )}
 
                     <button
-                        onClick={handleLogout}
+                        onClick={handleToggleSound}
                         className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
-                        title="خروج از حساب"
+                        title={isSoundEnabled ? "قطع صدا" : "پخش صدا"}
                     >
-                        <LogOutIcon className="size-5"/>
+                        {isSoundEnabled ? <Volume2Icon className="size-5"/> : <VolumeOffIcon className="size-5"/>}
                     </button>
 
                     <button

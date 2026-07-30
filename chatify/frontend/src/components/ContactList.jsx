@@ -50,7 +50,7 @@ function ContactList({ searchQuery = "" }) {
     : allContacts;
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
+    <div className="flex flex-col gap-1.5 px-1 h-full overflow-y-auto">
       {allContacts.length === 0 && (
         <p className="text-center text-slate-500 text-sm py-6">
           هنوز مخاطبی ندارید. از دکمه‌ی «+» بالا مخاطب جدید اضافه کنید.
@@ -85,57 +85,58 @@ function ContactList({ searchQuery = "" }) {
         return (
           <div
             key={contact._id || contact.id || idx}
-            className="group relative bg-cyan-500/10 p-4 rounded-lg cursor-pointer hover:bg-cyan-500/20 transition-colors m-2"
             onClick={() => setSelectedUser(contact)}
+            className="group relative flex items-center gap-3 p-3 rounded-2xl cursor-pointer
+                       bg-gradient-to-r from-slate-800/40 to-slate-800/10 border border-slate-700/40
+                       hover:from-cyan-500/10 hover:to-blue-500/5 hover:border-cyan-500/30
+                       hover:shadow-lg hover:shadow-cyan-500/5 transition-all duration-200"
           >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="relative flex-shrink-0">
-                <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-700">
-                  <img
-                    src={profilePic}
-                    alt={displayName}
-                    className="w-full h-full object-cover"
-                    onError={(e) => (e.target.src = "/avatar.png")}
-                  />
-                </div>
-                <span
-                  className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-800 ${
-                    isOnline ? "bg-green-400" : "bg-gray-500"
-                  }`}
-                ></span>
+            <div className="relative flex-shrink-0">
+              <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-cyan-500/10 group-hover:ring-cyan-400/40 transition-all">
+                <img
+                  src={profilePic}
+                  alt={displayName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => (e.target.src = "/avatar.png")}
+                />
               </div>
-
-              <div className="flex flex-col min-w-0 flex-1">
-                <h4 className="text-slate-200 font-medium text-sm truncate" title={displayName}>
-                  {displayName}
-                </h4>
-                <p
-                  className={`text-xs font-medium truncate ${
-                    isOnline ? "text-green-400" : "text-slate-500"
-                  }`}
-                >
-                  {isOnline ? "آنلاین" : "آفلاین"}
-                </p>
-              </div>
-
-              {contactRecordId && (
-                <button
-                  onClick={(e) => handleDeleteClick(e, contactRecordId)}
-                  className={`flex-shrink-0 flex items-center justify-center rounded-full transition-all duration-200 ${
-                    isConfirming
-                      ? "bg-red-500 text-white w-16 h-8 opacity-100"
-                      : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
-                  }`}
-                  title={isConfirming ? "تایید حذف" : "حذف مخاطب"}
-                >
-                  {isConfirming ? (
-                    <span className="text-xs font-medium">مطمئنی؟</span>
-                  ) : (
-                    <Trash2 className="w-4 h-4" />
-                  )}
-                </button>
-              )}
+              <span
+                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${
+                  isOnline ? "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.7)]" : "bg-gray-500"
+                }`}
+              />
             </div>
+
+            <div className="flex flex-col min-w-0 flex-1">
+              <h4 className="text-slate-200 font-medium text-sm truncate" title={displayName}>
+                {displayName}
+              </h4>
+              <p
+                className={`text-xs font-medium truncate transition-opacity ${
+                  isOnline ? "text-green-400" : "text-slate-500"
+                } group-hover:opacity-0`}
+              >
+                {isOnline ? "آنلاین" : "آفلاین"}
+              </p>
+            </div>
+
+            {contactRecordId && (
+              <button
+                onClick={(e) => handleDeleteClick(e, contactRecordId)}
+                className={`absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full transition-all duration-200 ${
+                  isConfirming
+                    ? "bg-red-500 text-white w-16 h-8 opacity-100"
+                    : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+                }`}
+                title={isConfirming ? "تایید حذف" : "حذف مخاطب"}
+              >
+                {isConfirming ? (
+                  <span className="text-xs font-medium">مطمئنی؟</span>
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+              </button>
+            )}
           </div>
         );
       })}

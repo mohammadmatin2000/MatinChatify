@@ -10,11 +10,17 @@ export default function MessageInput({
   editingText,
   setEditingMessageId,
   setEditingText,
+  sendMessage: sendMessageProp, // ✅ اگه از بیرون پاس داده بشه (مثلاً از GroupChatContainer)، همینو استفاده می‌کنیم
 }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [imageFile, setImageFile] = useState(null);
   const fileInputRef = useRef(null);
-  const { sendMessage, editMessage, isSoundEnabled } = useChatStore();
+
+  // نسخه‌ی پیش‌فرض store (مخصوص چت خصوصی)
+  const { sendMessage: storeSendMessage, editMessage, isSoundEnabled } = useChatStore();
+
+  // ✅ اگه prop پاس داده شده باشه (حالت گروه)، همون اولویت داره؛ وگرنه از store استفاده می‌شه (چت خصوصی)
+  const doSendMessage = sendMessageProp || storeSendMessage;
 
   useEffect(() => {
     if (editingMessageId) {
@@ -31,8 +37,12 @@ export default function MessageInput({
       editMessage(editingMessageId, text, imageFile);
       setEditingMessageId(null);
       setEditingText("");
+    } else if (sendMessageProp) {
+      // ✅ حالت گروه: تابع gروه هیچ آرگومانی نمی‌گیره، خودش از state داخلی می‌خونه
+      sendMessageProp();
     } else {
-      sendMessage({ text: text.trim(), image: imageFile });
+      // چت خصوصی
+      storeSendMessage({ text: text.trim(), image: imageFile });
     }
 
     setText("");

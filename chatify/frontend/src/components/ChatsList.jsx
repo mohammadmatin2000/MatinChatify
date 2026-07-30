@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
 import { faIR } from "date-fns/locale";
-import { ImageIcon } from "lucide-react";
+import { ImageIcon, Trash2 } from "lucide-react";
 import axios from "axios";
 
 function formatLastMessageTime(date) {
@@ -17,15 +17,30 @@ function formatLastMessageTime(date) {
 }
 
 function ChatsList({ searchQuery = "" }) {
-  const { getAllContacts, allContacts, isUsersLoading, setSelectedUser, onlineUsers, addMessageEventListener } =
-    useChatStore();
+  const {
+    getAllContacts,
+    allContacts,
+    isUsersLoading,
+    setSelectedUser,
+    onlineUsers,
+    addMessageEventListener,
+    deleteContact,
+  } = useChatStore();
   const { authUser } = useAuthStore();
   const [lastMessages, setLastMessages] = useState({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const confirmTimerRef = useRef(null);
 
   // ========================== دریافت لیست مخاطبین ==========================
   useEffect(() => {
     getAllContacts();
   }, [getAllContacts]);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    };
+  }, []);
 
   // ========================== دریافت آخرین پیام‌ها (بار اول / fallback) ==========================
   const fetchLastMessage = async (contactId) => {
@@ -106,6 +121,23 @@ function ChatsList({ searchQuery = "" }) {
     return unsubscribe;
   }, [authUser?.id, addMessageEventListener]);
 
+  const handleDeleteClick = (e, contactRecordId) => {
+    e.stopPropagation();
+
+    if (confirmDeleteId === contactRecordId) {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      deleteContact(contactRecordId);
+      setConfirmDeleteId(null);
+      return;
+    }
+
+    setConfirmDeleteId(contactRecordId);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => {
+      setConfirmDeleteId((current) => (current === contactRecordId ? null : current));
+    }, 3000);
+  };
+
   if (isUsersLoading) return <UsersLoadingSkeleton />;
   if (!allContacts || allContacts.length === 0) return <NoChatsFound />;
 
@@ -120,16 +152,17 @@ function ChatsList({ searchQuery = "" }) {
     : allContacts;
 
   if (filteredContacts.length === 0) {
-    return (
-      <p className="text-center text-slate-500 text-sm py-8">چیزی با این عبارت پیدا نشد</p>
-    );
+    return <p className="text-center text-slate-500 text-sm py-8">چیزی با این عبارت پیدا نشد</p>;
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col gap-1.5 px-1">
       {filteredContacts.map((contact) => {
         const contactId = contact?.id || contact?._id;
         if (!contactId) return null;
+
+        const contactRecordId = contact.raw?.id;
+        const isConfirming = confirmDeleteId === contactRecordId;
 
         const lastMessageObj = lastMessages[contactId];
         const hasImage = !!lastMessageObj?.image;
@@ -169,11 +202,13 @@ function ChatsList({ searchQuery = "" }) {
           <div
             key={contactId}
             onClick={() => setSelectedUser(contact)}
-            className="flex items-center gap-3 px-3 py-2.5 mx-1 my-0.5 rounded-xl cursor-pointer
-                       hover:bg-slate-800/60 active:bg-slate-800 transition-colors duration-150"
+            className="group relative flex items-center gap-3 p-3 rounded-2xl cursor-pointer
+                       bg-gradient-to-r from-slate-800/40 to-slate-800/10 border border-slate-700/40
+                       hover:from-cyan-500/10 hover:to-blue-500/5 hover:border-cyan-500/30
+                       hover:shadow-lg hover:shadow-cyan-500/5 transition-all duration-200"
           >
             <div className="relative flex-shrink-0">
-              <div className="w-[52px] h-[52px] rounded-full overflow-hidden ring-1 ring-slate-700/70">
+              <div className="w-[52px] h-[52px] rounded-full overflow-hidden ring-2 ring-cyan-500/10 group-hover:ring-cyan-400/40 transition-all">
                 <img
                   src={profilePicUrl}
                   alt={displayName}
@@ -182,15 +217,17 @@ function ChatsList({ searchQuery = "" }) {
                 />
               </div>
               {isOnline && (
-                <span className="absolute bottom-0 left-0 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-slate-900" />
+                <span className="absolute bottom-0 left-0 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-slate-900 shadow-[0_0_6px_rgba(74,222,128,0.7)]" />
               )}
             </div>
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <h4 className="text-slate-100 font-semibold text-[15px] truncate">{displayName}</h4>
-                {timeLabel && (
-                  <span className="text-[11px] text-slate-500 flex-shrink-0 whitespace-nowrap">{timeLabel}</span>
+                {timeLabel && !isConfirming && (
+                  <span className="text-[11px] text-slate-500 flex-shrink-0 whitespace-nowrap group-hover:opacity-0 transition-opacity">
+                    {timeLabel}
+                  </span>
                 )}
               </div>
 
@@ -211,6 +248,25 @@ function ChatsList({ searchQuery = "" }) {
                 </p>
               </div>
             </div>
+
+            {/* ✅ دکمه‌ی حذف — فقط موقع hover دیده می‌شه */}
+            {contactRecordId && (
+              <button
+                onClick={(e) => handleDeleteClick(e, contactRecordId)}
+                className={`absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full transition-all duration-200 ${
+                  isConfirming
+                    ? "bg-red-500 text-white w-16 h-8 opacity-100"
+                    : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+                }`}
+                title={isConfirming ? "تایید حذف" : "حذف گفتگو"}
+              >
+                {isConfirming ? (
+                  <span className="text-xs font-medium">مطمئنی؟</span>
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+              </button>
+            )}
           </div>
         );
       })}

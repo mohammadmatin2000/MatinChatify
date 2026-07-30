@@ -11,7 +11,7 @@ function ActiveTabSwitch() {
   ];
 
   return (
-    <div className="tabs tabs-boxed bg-transparent p-2 m-2">
+    <div className="tabs tabs-boxed bg-transparent p-2 m-0">
       {tabs.map((tab) => (
         <button
           key={tab.key}

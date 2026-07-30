@@ -4,7 +4,8 @@ from accounts.models import User,Profile
 class Group(models.Model):
     name = models.CharField(max_length=255)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="owned_groups")
-    description = models.TextField()
+    description = models.TextField(blank=True, default="")
+    avatar = models.ImageField(upload_to="group_avatars/", null=True, blank=True)  # ✅ اضافه شد
     is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
@@ -23,7 +24,7 @@ class GroupMember(models.Model):
     class Meta:
         unique_together = ("user", "group")
     def __str__(self):
-        return f"{self.user.username} - {self.group.name} ({self.role})"
+        return f"{self.user.email} - {self.group.name} ({self.role})"
 # ======================================================================================================================
 class GroupMessages(models.Model):
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="messages")
@@ -34,7 +35,7 @@ class GroupMessages(models.Model):
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
     def __str__(self):
-        return f"{self.author.username} در {self.group.name}: {self.text[:30]}"
+        return f"{self.author.email} در {self.group.name}: {self.text[:30]}"
 # ======================================================================================================================
 class GroupAttachment(models.Model):
     message = models.ForeignKey(
