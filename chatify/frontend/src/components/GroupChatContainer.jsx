@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
@@ -16,7 +17,6 @@ import {
   Check,
   FileTextIcon,
   MapPinIcon,
-  UserIcon,
   DownloadIcon,
 } from "lucide-react";
 
@@ -32,20 +32,26 @@ const fileToBase64 = (file) =>
   });
 
 function GroupChatContainer({ group, onBack }) {
-  if (!group || !(group._id || group.id)) return null;
-
-  const groupId = group._id || group.id;
+  // ✅ FIX: چک اعتبار group قبل از تمام هوک‌ها انجام نمی‌شه (نقض Rules of
+  // Hooks) — به‌جاش groupId با optional chaining امن محاسبه می‌شه و
+  // return null فقط بعد از تمام هوک‌ها (پایین فایل) اجرا می‌شه.
+  const groupId = group?._id || group?.id;
   const accessToken = localStorage.getItem("accessToken");
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
+  // ✅ FIX: قبلاً با JSON.parse(localStorage.getItem("authUser")) خونده
+  // می‌شد که همیشه {} خالی برمی‌گردوند. از هوک useAuthStore می‌خونیم،
+  // دقیقاً مثل ChatContainer.jsx (نسخه‌ی سالم چت خصوصی).
+  const { authUser } = useAuthStore();
 
-  const { allContacts, getAllContacts } = useChatStore();
+  const { allContacts, getAllContacts, onlineUsers } = useChatStore();
 
-  const [localGroup, setLocalGroup] = useState(group);
+  const [localGroup, setLocalGroup] = useState(group || {});
 
   const [messages, setMessages] = useState([]);
   const [isMessagesLoading, setIsMessagesLoading] = useState(true);
   const [text, setText] = useState("");
   const [activeMenu, setActiveMenu] = useState(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingText, setEditingText] = useState("");
   const messageEndRef = useRef(null);
   const socketRef = useRef(null);
   const textRef = useRef(text);
@@ -56,9 +62,14 @@ function GroupChatContainer({ group, onBack }) {
   const [isMembersLoading, setIsMembersLoading] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState(localGroup.name || "");
+  const [editedName, setEditedName] = useState(group?.name || "");
   const nameInputRef = useRef(null);
   const avatarInputRef = useRef(null);
+
+  // ✅ NEW: ویرایش توضیحات گروه — دقیقاً همون الگوی ویرایش اسم گروه
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState(group?.description || "");
+  const descriptionInputRef = useRef(null);
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [selectedNewMemberIds, setSelectedNewMemberIds] = useState([]);
@@ -70,8 +81,10 @@ function GroupChatContainer({ group, onBack }) {
   const isAdmin = localGroup.my_role === "admin" || localGroup.owner?.id === authUser?.id;
 
   useEffect(() => {
+    if (!group) return;
     setLocalGroup(group);
     setEditedName(group.name || "");
+    setEditedDescription(group.description || "");
   }, [group]);
 
   useEffect(() => {
@@ -85,6 +98,7 @@ function GroupChatContainer({ group, onBack }) {
   }, []);
 
   const fetchMembers = useCallback(async () => {
+    if (!groupId || !accessToken) return;
     setIsMembersLoading(true);
     try {
       const res = await axios.get(`${API_BASE_URL}/groups/members/?group=${groupId}`, {
@@ -116,11 +130,31 @@ function GroupChatContainer({ group, onBack }) {
 
     socketRef.current.onmessage = (e) => {
       const data = JSON.parse(e.data);
+
       if (data.type === "message") {
         setMessages((prev) => [...prev, data]);
       }
+
       if (data.type === "user_event") {
         fetchMembers();
+      }
+
+      if (data.type === "error") {
+        toast.error(data.message || "خطا در ارسال پیام");
+      }
+
+      // ✅ FIX: همگام‌سازی ویرایش/حذف که از سرور broadcast می‌شه (قبلاً اصلاً
+      // هندل نمی‌شد چون بک‌اند هم این اکشن‌ها رو نداشت).
+      if (data.type === "edit_message") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.messageId ? { ...m, text: data.newText, edited: true } : m
+          )
+        );
+      }
+
+      if (data.type === "delete_message") {
+        setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
       }
     };
 
@@ -134,6 +168,11 @@ function GroupChatContainer({ group, onBack }) {
   // دریافت پیام‌ها از API
   // -------------------------
   useEffect(() => {
+    if (!groupId || !accessToken) {
+      setIsMessagesLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
     const fetchMessages = async () => {
@@ -161,10 +200,13 @@ function GroupChatContainer({ group, onBack }) {
   }, [messages]);
 
   // -------------------------
-  // ارسال پیام — حالا یه payload کامل قبول می‌کنه (متن/عکس/فایل/لوکیشن/مخاطب)
+  // ارسال پیام — payload کامل (متن/عکس/فایل/لوکیشن/مخاطب)
   // -------------------------
   const sendMessage = async (payload = {}) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("اتصال چت برقرار نیست، لطفاً صبر کن یا صفحه رو رفرش کن");
+      return;
+    }
 
     const finalText = payload.text !== undefined ? payload.text : textRef.current;
     const { image = null, file = null, fileName = null, messageType = "text", meta = null } = payload;
@@ -200,6 +242,25 @@ function GroupChatContainer({ group, onBack }) {
   };
 
   // -------------------------
+  // ویرایش پیام (فقط نویسنده‌ی خودش) — واقعاً به سرور می‌فرسته
+  // -------------------------
+  const handleEditMessage = (messageId, newText) => {
+    const trimmed = (newText || "").trim();
+    if (!trimmed || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(
+      JSON.stringify({ action: "edit_message", messageId, newText: trimmed })
+    );
+  };
+
+  // -------------------------
+  // حذف پیام (فقط نویسنده‌ی خودش) — واقعاً به سرور می‌فرسته
+  // -------------------------
+  const handleDeleteMessage = (messageId) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({ action: "delete_message", messageId }));
+  };
+
+  // -------------------------
   // ویرایش اسم گروه (فقط ادمین)
   // -------------------------
   useEffect(() => {
@@ -221,6 +282,31 @@ function GroupChatContainer({ group, onBack }) {
     } catch (err) {
       console.error("❌ خطا در تغییر اسم گروه:", err.response?.data || err);
       setEditedName(localGroup.name || "");
+    }
+  };
+
+  // -------------------------
+  // ✅ NEW: ویرایش توضیحات گروه (فقط ادمین) — همون الگوی اسم گروه
+  // -------------------------
+  useEffect(() => {
+    if (isEditingDescription && descriptionInputRef.current) descriptionInputRef.current.focus();
+  }, [isEditingDescription]);
+
+  const handleSaveDescription = async () => {
+    const trimmed = editedDescription.trim();
+    setIsEditingDescription(false);
+    if (trimmed === (localGroup.description || "")) return;
+
+    try {
+      const res = await axios.patch(
+        `${API_BASE_URL}/groups/groups/${groupId}/`,
+        { description: trimmed },
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      setLocalGroup((prev) => ({ ...prev, ...res.data }));
+    } catch (err) {
+      console.error("❌ خطا در تغییر توضیحات گروه:", err.response?.data || err);
+      setEditedDescription(localGroup.description || "");
     }
   };
 
@@ -329,7 +415,7 @@ function GroupChatContainer({ group, onBack }) {
   };
 
   // -------------------------
-  // محتوای پیام بسته به نوعش
+  // محتوای پیام بسته به نوعش (لوکیشن/مخاطب/فایل)
   // -------------------------
   const renderMessageContent = (msg) => {
     const type = msg.messageType || msg.message_type || "text";
@@ -426,7 +512,7 @@ function GroupChatContainer({ group, onBack }) {
   );
 
   // -------------------------
-  // پنل اطلاعات گروه / اعضا
+  // پنل اطلاعات گروه / اعضا (با وضعیت آنلاین)
   // -------------------------
   const GroupInfoPanel = () => {
     if (!showInfoPanel) return null;
@@ -492,8 +578,41 @@ function GroupChatContainer({ group, onBack }) {
                 </div>
               )}
 
-              {localGroup.description && (
-                <p className="text-slate-400 text-sm text-center">{localGroup.description}</p>
+              {/* ✅ NEW: توضیحات گروه حالا قابل ویرایشه (فقط ادمین) — دقیقاً الگوی اسم گروه */}
+              {isEditingDescription ? (
+                <textarea
+                  ref={descriptionInputRef}
+                  value={editedDescription}
+                  onChange={(e) => setEditedDescription(e.target.value)}
+                  onBlur={handleSaveDescription}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSaveDescription();
+                    }
+                  }}
+                  rows={2}
+                  placeholder="توضیحاتی برای گروه بنویس..."
+                  className="w-full bg-slate-900/60 border border-cyan-400/60 outline-none text-slate-300 text-sm text-center px-3 py-1.5 rounded-lg resize-none"
+                />
+              ) : isAdmin ? (
+                <div
+                  className="flex items-center gap-1.5 max-w-full px-2 cursor-pointer group/desc"
+                  onClick={() => setIsEditingDescription(true)}
+                >
+                  <p
+                    className={`text-sm text-center truncate ${
+                      localGroup.description ? "text-slate-400" : "text-slate-600 italic"
+                    }`}
+                  >
+                    {localGroup.description || "افزودن توضیحات..."}
+                  </p>
+                  <PencilIcon className="w-3.5 h-3.5 text-slate-500 opacity-0 group-hover/desc:opacity-100 transition-opacity flex-shrink-0" />
+                </div>
+              ) : (
+                localGroup.description && (
+                  <p className="text-slate-400 text-sm text-center">{localGroup.description}</p>
+                )
               )}
             </div>
 
@@ -515,25 +634,34 @@ function GroupChatContainer({ group, onBack }) {
                 {members.map((m) => {
                   const isOwnerRow = m.user === localGroup.owner?.id;
                   const isConfirmingRemove = confirmRemoveId === m.id;
+                  const isOnline = onlineUsers.includes(String(m.user));
 
                   return (
                     <div
                       key={m.id}
                       className="group/member flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/40 transition-colors"
                     >
-                      <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
                         <img
                           src={resolveMemberAvatar(m.user_detail?.image)}
                           alt={m.user_detail?.name}
                           className="w-full h-full object-cover"
                           onError={(e) => (e.target.src = "/avatar.png")}
                         />
+                        {isOnline && (
+                          <span
+                            className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-800"
+                            title="آنلاین"
+                          />
+                        )}
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="text-slate-200 text-sm truncate">
                           {m.user_detail?.name || m.user_detail?.email}
                         </span>
-                        <span className="text-slate-500 text-xs truncate">{m.user_detail?.email}</span>
+                        <span className={`text-xs truncate ${isOnline ? "text-green-400" : "text-slate-500"}`}>
+                          {isOnline ? "آنلاین" : m.user_detail?.email}
+                        </span>
                       </div>
 
                       {m.role === "admin" && (
@@ -662,6 +790,9 @@ function GroupChatContainer({ group, onBack }) {
   // -------------------------
   // Render
   // -------------------------
+  // ✅ FIX: چک نهایی بعد از تمام هوک‌ها
+  if (!groupId) return null;
+
   return (
     <div className="flex flex-col h-full">
       <GroupChatHeader />
@@ -676,7 +807,12 @@ function GroupChatContainer({ group, onBack }) {
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => {
-              const isOwner = msg.sender?.id === authUser?.id || msg.author?.id === authUser?.id;
+              // ✅ مقاوم در برابر sender/author چه آبجکت باشه چه عدد خام
+              const rawSenderId = msg.sender?.id ?? msg.sender ?? msg.author?.id ?? msg.author;
+              const isOwner =
+                rawSenderId !== undefined &&
+                rawSenderId !== null &&
+                String(rawSenderId) === String(authUser?.id ?? "");
               const senderInfo = msg.sender || msg.author;
               const specialContent = renderMessageContent(msg);
 
@@ -696,7 +832,10 @@ function GroupChatContainer({ group, onBack }) {
                           src={resolveUrl(msg.image)}
                           alt="Shared"
                           className="rounded-lg max-h-64 object-contain cursor-pointer hover:opacity-90 transition"
-                          onClick={() => window.open(resolveUrl(msg.image), "_blank")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(resolveUrl(msg.image), "_blank");
+                          }}
                         />
                       </div>
                     )}
@@ -718,7 +857,8 @@ function GroupChatContainer({ group, onBack }) {
                           <button
                             className="px-3 py-1 text-xs text-cyan-200 hover:bg-slate-600"
                             onClick={() => {
-                              setText(msg.text);
+                              setEditingMessageId(msg.id);
+                              setEditingText(msg.text);
                               setActiveMenu(null);
                             }}
                           >
@@ -727,7 +867,10 @@ function GroupChatContainer({ group, onBack }) {
                         )}
                         <button
                           className="px-3 py-1 text-xs text-red-400 hover:bg-slate-600"
-                          onClick={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
+                          onClick={() => {
+                            handleDeleteMessage(msg.id);
+                            setActiveMenu(null);
+                          }}
                         >
                           حذف
                         </button>
@@ -742,7 +885,16 @@ function GroupChatContainer({ group, onBack }) {
         )}
       </div>
 
-      <MessageInput text={text} setText={setText} sendMessage={sendMessage} />
+      <MessageInput
+        text={text}
+        setText={setText}
+        editingMessageId={editingMessageId}
+        editingText={editingText}
+        setEditingMessageId={setEditingMessageId}
+        setEditingText={setEditingText}
+        sendMessage={sendMessage}
+        editMessage={handleEditMessage}
+      />
     </div>
   );
 }

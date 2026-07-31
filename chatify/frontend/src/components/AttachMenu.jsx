@@ -2,6 +2,7 @@ import {useRef, useState, useEffect} from "react";
 import {ImageIcon, CameraIcon, FileTextIcon, MapPinIcon, UserIcon, PlusIcon} from "lucide-react";
 import {useChatStore} from "../store/useChatStore";
 import {createPortal} from "react-dom";
+import CameraCaptureModal from "./CameraCaptureModal";
 
 const OPTIONS = [
     {key: "gallery", label: "عکس و ویدیو", icon: ImageIcon, color: "bg-purple-500"},
@@ -14,12 +15,14 @@ const OPTIONS = [
 function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelectLocation, onSelectContact}) {
     const [isOpen, setIsOpen] = useState(false);
     const [showContactPicker, setShowContactPicker] = useState(false);
+    // ✅ NEW: به‌جای input فایل با capture (که دوربین سیستم‌عامل رو باز می‌کرد)،
+    // حالا یه مودال دوربین واقعی داخل اپ داریم (getUserMedia + preview زنده)
+    const [showCamera, setShowCamera] = useState(false);
     const [menuPos, setMenuPos] = useState({bottom: 0, right: 0});
     const menuRef = useRef(null);
     const buttonRef = useRef(null);
 
     const galleryInputRef = useRef(null);
-    const cameraInputRef = useRef(null);
     const documentInputRef = useRef(null);
 
     const {allContacts, getAllContacts} = useChatStore();
@@ -57,7 +60,8 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 galleryInputRef.current?.click();
                 break;
             case "camera":
-                cameraInputRef.current?.click();
+                // ✅ NEW: به‌جای کلیک روی input مخفی، مودال دوربین واقعی رو باز کن
+                setShowCamera(true);
                 break;
             case "document":
                 documentInputRef.current?.click();
@@ -98,8 +102,8 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 ref={buttonRef}
                 type="button"
                 onClick={toggleMenu}
-                className={`bg-slate-800/50 rounded-lg px-4 py-2 transition-colors ${
-                    isOpen ? "text-cyan-400" : "text-slate-400 hover:text-slate-200"
+                className={`rounded-lg px-4 py-2 transition-all bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white ${
+                    isOpen ? "ring-2 ring-cyan-300/50" : ""
                 }`}
             >
                 <PlusIcon className={`w-5 h-5 transition-transform ${isOpen ? "rotate-45" : ""}`}/>
@@ -138,7 +142,7 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                     document.body
                 )}
 
-            {/* input های مخفی */}
+            {/* input های مخفی (گالری/داکیومنت — دوربین دیگه از اینجا نیست) */}
             <input
                 type="file"
                 accept="image/*,video/*"
@@ -152,24 +156,22 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
             />
             <input
                 type="file"
-                accept="image/*"
-                capture="environment"
-                ref={cameraInputRef}
-                className="hidden"
-                onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) onSelectCamera(file);
-                    e.target.value = "";
-                }}
-            />
-            <input
-                type="file"
                 ref={documentInputRef}
                 className="hidden"
                 onChange={(e) => {
                     const file = e.target.files[0];
                     if (file) onSelectDocument(file);
                     e.target.value = "";
+                }}
+            />
+
+            {/* ✅ NEW: مودال دوربین واقعی داخل اپ */}
+            <CameraCaptureModal
+                isOpen={showCamera}
+                onClose={() => setShowCamera(false)}
+                onCapture={(file) => {
+                    onSelectCamera(file);
+                    setShowCamera(false);
                 }}
             />
 

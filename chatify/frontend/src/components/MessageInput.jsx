@@ -12,14 +12,18 @@ export default function MessageInput({
   setEditingMessageId,
   setEditingText,
   sendMessage: sendMessageProp, // ✅ اگه پاس داده بشه (گروه)، اولویت داره
+  editMessage: editMessageProp, // ✅ FIX: همین‌طور برای ویرایش — اگه پاس داده
+  // بشه (حالت گروه)، از این استفاده می‌شه؛ قبلاً همیشه editMessage چت
+  // خصوصی از store صدا زده می‌شد، حتی توی گروه (که یعنی ویرایش پیام گروه
+  // هیچ‌وقت واقعاً به سرور گروه نمی‌رفت).
 }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [imageFile, setImageFile] = useState(null);
   const [documentFile, setDocumentFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  const { sendMessage: storeSendMessage, editMessage, isSoundEnabled } = useChatStore();
-  const doSendMessage = sendMessageProp || storeSendMessage;
+  const { sendMessage: storeSendMessage, editMessage: storeEditMessage, isSoundEnabled } = useChatStore();
+  const doEditMessage = editMessageProp || storeEditMessage;
 
   useEffect(() => {
     if (editingMessageId) {
@@ -50,7 +54,7 @@ export default function MessageInput({
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
     if (editingMessageId) {
-      editMessage(editingMessageId, text, imageFile);
+      doEditMessage(editingMessageId, text, imageFile);
       setEditingMessageId(null);
       setEditingText("");
       setText("");
@@ -67,7 +71,6 @@ export default function MessageInput({
     }
 
     if (sendMessageProp) {
-      // تابع گروه خودش از state داخلی می‌خونه؛ فایل/عکس رو مستقیم بهش پاس می‌دیم
       sendMessageProp(payload);
     } else {
       storeSendMessage(payload);
@@ -96,7 +99,7 @@ export default function MessageInput({
   };
 
   return (
-    <div className="p-4 border-t border-slate-700/50">
+    <div className="p-3 border-t border-slate-700/50">
       {imageFile && (
         <div className="max-w-3xl mx-auto mb-3 flex items-center">
           <div className="relative">
@@ -132,7 +135,9 @@ export default function MessageInput({
         </div>
       )}
 
-      <form onSubmit={handleSend} className="max-w-3xl mx-auto flex space-x-4">
+      {/* ✅ FIX: space-x-4 توی چیدمان RTL درست فاصله نمی‌ذاشت (باعث می‌شد
+          دکمه‌ی + به ورودی متن بچسبه) — gap مستقل از جهت درست کار می‌کنه */}
+      <form onSubmit={handleSend} className="max-w-3xl mx-auto flex items-center gap-3">
         <input
           type="text"
           value={text}
