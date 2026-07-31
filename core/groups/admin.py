@@ -2,12 +2,14 @@ from django.contrib import admin
 from .models import Group, GroupMember, GroupMessages, GroupAttachment, GroupInvite
 
 # ======================================================================================================================
+# نمایش اعضای گروه به صورت اینلاین (داخل صفحه‌ی خود گروه)
 class GroupMemberInline(admin.TabularInline):
     model = GroupMember
     extra = 1
     autocomplete_fields = ['user']
 
 # ======================================================================================================================
+# نمایش پیام‌های گروه به صورت اینلاین (فقط قابل مشاهده، نه ویرایش دستی محتوا)
 class MessageInline(admin.TabularInline):
     model = GroupMessages
     extra = 0
@@ -16,18 +18,21 @@ class MessageInline(admin.TabularInline):
     show_change_link = True
 
 # ======================================================================================================================
+# نمایش پیوست‌های یک پیام به صورت اینلاین (داخل صفحه‌ی خود پیام)
 class GroupAttachmentInline(admin.TabularInline):
     model = GroupAttachment
     extra = 0
     readonly_fields = ('uploaded_at',)
 
 # ======================================================================================================================
+# نمایش دعوت‌نامه‌های یک گروه به صورت اینلاین (داخل صفحه‌ی خود گروه)
 class GroupInviteInline(admin.TabularInline):
     model = GroupInvite
     extra = 0
     readonly_fields = ('code', 'created_by', 'created_date', 'expires_date')
 
 # ======================================================================================================================
+# مدیریت گروه‌ها در پنل ادمین
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
     list_display = ('name', 'owner', 'is_active', 'created_date', 'updated_date')
@@ -36,6 +41,7 @@ class GroupAdmin(admin.ModelAdmin):
     inlines = [GroupMemberInline, MessageInline, GroupInviteInline]
 
 # ======================================================================================================================
+# مدیریت عضویت‌های گروه در پنل ادمین
 @admin.register(GroupMember)
 class GroupMemberAdmin(admin.ModelAdmin):
     list_display = ('user', 'group', 'role', 'joined_date')
@@ -43,6 +49,7 @@ class GroupMemberAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'group__name')
 
 # ======================================================================================================================
+# مدیریت پیام‌های گروه در پنل ادمین
 @admin.register(GroupMessages)
 class MessageAdmin(admin.ModelAdmin):
     list_display = ('author', 'group', 'text', 'is_edited', 'is_deleted', 'created_date')
@@ -51,6 +58,7 @@ class MessageAdmin(admin.ModelAdmin):
     inlines = [GroupAttachmentInline]
 
 # ======================================================================================================================
+# مدیریت پیوست‌های پیام‌های گروه در پنل ادمین
 @admin.register(GroupAttachment)
 class GroupAttachmentAdmin(admin.ModelAdmin):
     list_display = ('message', 'file', 'uploaded_at')
@@ -58,6 +66,7 @@ class GroupAttachmentAdmin(admin.ModelAdmin):
     list_filter = ('uploaded_at',)
 
 # ======================================================================================================================
+# مدیریت دعوت‌نامه‌های گروه در پنل ادمین
 @admin.register(GroupInvite)
 class GroupInviteAdmin(admin.ModelAdmin):
     list_display = ('code', 'group', 'created_by', 'created_date', 'expires_date')

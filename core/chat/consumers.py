@@ -8,7 +8,6 @@ from django.utils.timezone import now
 from django.core.files.base import ContentFile
 from chat.models import MessageModels, ContactModels
 # ======================================================================================================================
-# ✅ لیست سراسری کاربران آنلاین
 online_users_list = set()
 # ======================================================================================================================
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -20,13 +19,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
 
-        # room_name کاربر مقابل
         self.room_name = self.scope["url_route"]["kwargs"].get("room_name")
         if not self.room_name:
             await self.close()
             return
 
-        # نام گروه مشترک بین دو کاربر
         self.room_group_name = f"chat_{'_'.join(sorted([str(self.user_id), str(self.room_name)]))}"
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
@@ -34,7 +31,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         print(f"✅ WS connected: {self.channel_name} | user_id={self.user_id} | room={self.room_group_name}")
 
-        # پیام اتصال موفق
         await self.send(text_data=json.dumps({
             "type": "connection",
             "message": {
@@ -74,8 +70,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         temp_id = msg.get("tempId")
         text = msg.get("text", "")
         image_base64 = msg.get("image")
+        file_base64 = msg.get("file")
+        file_name = msg.get("fileName")
+        message_type = msg.get("messageType", "text")
+        meta = msg.get("meta")
 
-        if not text and not image_base64:
+        if not text and not image_base64 and not file_base64 and not meta:
             await self.send(json.dumps({"error": "Empty message"}))
             return
 
@@ -88,12 +88,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
             except Exception as e:
                 print("⚠️ Image decode error:", e)
 
+        doc_file = None
+        if file_base64 and ";base64," in file_base64:
+            try:
+                header, filestr = file_base64.split(";base64,")
+                ext = (file_name.split(".")[-1] if file_name and "." in file_name else "bin")
+                doc_file = ContentFile(base64.b64decode(filestr), name=f"{uuid.uuid4()}.{ext}")
+            except Exception as e:
+                print("⚠️ File decode error:", e)
+
         # ذخیره در دیتابیس
         saved = await sync_to_async(MessageModels.objects.create)(
             sender_id=sender_id,
             receiver_id=receiver_id,
             text=text,
             image=image_file,
+            file=doc_file,
+            file_name=file_name if doc_file else None,
+            message_type=message_type,
+            meta=meta,
         )
 
         message_data = {
@@ -103,32 +116,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "senderId": sender_id,
             "receiverId": receiver_id,
             "image": saved.image.url if saved.image else None,
+            "file": saved.file.url if saved.file else None,
+            "fileName": saved.file_name,
+            "messageType": saved.message_type,
+            "meta": saved.meta,
             "createdAt": str(saved.created_date),
         }
 
-        # broadcast به گروه مشترک (برای کسی که چت رو باز کرده)
         await self.channel_layer.group_send(
             self.room_group_name,
-            {
-                "type": "chat_message_broadcast",
-                "message": message_data,
-            }
+            {"type": "chat_message_broadcast", "message": message_data}
         )
         print(f"✅ Message saved and broadcasted: {saved.id}")
 
-        # ✅ اطلاع‌رسانی سراسری به گروه‌های شخصی فرستنده و گیرنده
-        # (برای آپدیت لحظه‌ای «آخرین پیام» توی لیست چت‌ها، حتی اگه چت باز نباشه)
         for uid in {sender_id, receiver_id}:
             await self.channel_layer.group_send(
                 f"user_{uid}",
-                {
-                    "type": "new_message_notify",
-                    "message": message_data,
-                }
+                {"type": "new_message_notify", "message": message_data}
             )
 
     async def chat_message_broadcast(self, event):
-        # ارسال به کل اعضای گروه
         await self.send(text_data=json.dumps({
             "type": "chat_message",
             "message": event["message"]
@@ -146,23 +153,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await sync_to_async(msg_obj.save)()
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {
-                    "type": "edit_message_broadcast",
-                    "messageId": message_id,
-                    "newText": new_text
-                }
+                {"type": "edit_message_broadcast", "messageId": message_id, "newText": new_text}
             )
             print(f"✏️ Message edited: {message_id}")
 
-            # ✅ اطلاع‌رسانی برای آپدیت آخرین پیام در سایدبار (اگه ویرایش‌شده آخرین پیام بوده)
             for uid in {msg_obj.sender_id, msg_obj.receiver_id}:
                 await self.channel_layer.group_send(
                     f"user_{uid}",
-                    {
-                        "type": "message_edit_notify",
-                        "messageId": message_id,
-                        "newText": new_text,
-                    }
+                    {"type": "message_edit_notify", "messageId": message_id, "newText": new_text}
                 )
         except MessageModels.DoesNotExist:
             print(f"⚠️ Message to edit not found: {message_id}")
@@ -189,21 +187,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await sync_to_async(MessageModels.objects.filter(id=message_id).delete)()
         await self.channel_layer.group_send(
             self.room_group_name,
-            {
-                "type": "delete_message_broadcast",
-                "messageId": message_id
-            }
+            {"type": "delete_message_broadcast", "messageId": message_id}
         )
         print(f"🗑️ Message deleted: {message_id}")
 
-        # ✅ اطلاع‌رسانی برای آپدیت آخرین پیام در سایدبار
         for uid in {sender_id, receiver_id}:
             await self.channel_layer.group_send(
                 f"user_{uid}",
-                {
-                    "type": "message_delete_notify",
-                    "messageId": message_id,
-                }
+                {"type": "message_delete_notify", "messageId": message_id}
             )
 
     async def delete_message_broadcast(self, event):
@@ -227,35 +218,19 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
         self.user_id = user.id
         self.group_name = f"user_{self.user_id}"
 
-        await self.channel_layer.group_add(
-            self.group_name,
-            self.channel_name,
-        )
-
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
-        self.online_users[self.user_id] = (
-            self.online_users.get(self.user_id, 0) + 1
-        )
+        self.online_users[self.user_id] = self.online_users.get(self.user_id, 0) + 1
 
         contacts = await self.get_contacts()
-
-        await self.send(
-            text_data=json.dumps({
-                "type": "contacts_list",
-                "contacts": contacts,
-            })
-        )
+        await self.send(text_data=json.dumps({"type": "contacts_list", "contacts": contacts}))
 
         if self.online_users[self.user_id] == 1:
             await self.broadcast_presence(True)
 
     async def disconnect(self, code):
-
-        await self.channel_layer.group_discard(
-            self.group_name,
-            self.channel_name,
-        )
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
         if self.user_id not in self.online_users:
             return
@@ -264,147 +239,61 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
 
         if self.online_users[self.user_id] <= 0:
             del self.online_users[self.user_id]
-
             await self.broadcast_presence(False)
 
     async def receive(self, text_data):
-
         data = json.loads(text_data)
-
         if data.get("type") == "get_contacts":
             contacts = await self.get_contacts()
-
-            await self.send(
-                text_data=json.dumps({
-                    "type": "contacts_list",
-                    "contacts": contacts,
-                })
-            )
+            await self.send(text_data=json.dumps({"type": "contacts_list", "contacts": contacts}))
 
     async def presence_update(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "presence_update",
+            "userId": event["userId"],
+            "online": event["online"],
+        }))
 
-        await self.send(
-            text_data=json.dumps({
-                "type": "presence_update",
-                "userId": event["userId"],
-                "online": event["online"],
-            })
-        )
-
-    # -------------------- دریافت اعلان پیام جدید و فوروارد به کلاینت --------------------
     async def new_message_notify(self, event):
-        await self.send(
-            text_data=json.dumps({
-                "type": "new_message_notify",
-                "message": event["message"],
-            })
-        )
+        await self.send(text_data=json.dumps({"type": "new_message_notify", "message": event["message"]}))
 
-    # -------------------- دریافت اعلان ویرایش پیام و فوروارد به کلاینت --------------------
     async def message_edit_notify(self, event):
-        await self.send(
-            text_data=json.dumps({
-                "type": "message_edit_notify",
-                "messageId": event["messageId"],
-                "newText": event["newText"],
-            })
-        )
+        await self.send(text_data=json.dumps({
+            "type": "message_edit_notify",
+            "messageId": event["messageId"],
+            "newText": event["newText"],
+        }))
 
-    # -------------------- دریافت اعلان حذف پیام و فوروارد به کلاینت --------------------
     async def message_delete_notify(self, event):
-        await self.send(
-            text_data=json.dumps({
-                "type": "message_delete_notify",
-                "messageId": event["messageId"],
-            })
-        )
+        await self.send(text_data=json.dumps({
+            "type": "message_delete_notify",
+            "messageId": event["messageId"],
+        }))
 
-    # -------------------- توابع کمکی --------------------
     @database_sync_to_async
     def get_contacts(self):
-
-        contacts = (
-            ContactModels.objects
-            .filter(user=self.user)
-            .select_related(
-                "contact",
-                "contact__user_profile"
-            )
-        )
-
+        contacts = ContactModels.objects.filter(user=self.user).select_related("contact", "contact__user_profile")
         result = []
-
-        for item in contacts:
-            profile = getattr(item.contact, "user_profile", None)
-
-            result.append({
-                "id": item.contact.id,
-                "email": item.contact.email,
-                "name": profile.get_fullname() if profile else item.contact.email,
-                "image": profile.image.url if (profile and profile.image) else None,
-                "online": item.contact.id in self.online_users,
-            })
-
-        return result
-
-        result = []
-
         for item in contacts:
             profile = item.contact.user_profile
-
             result.append({
-
                 "id": item.contact.id,
-
                 "email": item.contact.email,
-
                 "name": profile.get_fullname(),
-
                 "image": profile.image.url if profile.image else None,
-
                 "online": item.contact.id in self.online_users,
-
             })
-
         return result
 
     @database_sync_to_async
     def get_watchers(self):
-
-        return list(
-
-            ContactModels.objects.filter(
-
-                contact_id=self.user_id
-
-            ).values_list(
-
-                "user_id",
-
-                flat=True,
-
-            )
-
-        )
+        return list(ContactModels.objects.filter(contact_id=self.user_id).values_list("user_id", flat=True))
 
     async def broadcast_presence(self, online):
-
         users = await self.get_watchers()
-
         for uid in users:
             await self.channel_layer.group_send(
-
                 f"user_{uid}",
-
-                {
-
-                    "type": "presence_update",
-
-                    "userId": self.user_id,
-
-                    "online": online,
-
-                },
-
+                {"type": "presence_update", "userId": self.user_id, "online": online},
             )
 # ======================================================================================================================

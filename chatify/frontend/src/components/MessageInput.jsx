@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
-import { ImageIcon, SendIcon, XIcon } from "lucide-react";
+import { SendIcon, XIcon, FileTextIcon } from "lucide-react";
 import useKeyboardSound from "../hooks/useKeyboardSound";
+import AttachMenu from "./AttachMenu";
 
 export default function MessageInput({
   text,
@@ -10,19 +11,15 @@ export default function MessageInput({
   editingText,
   setEditingMessageId,
   setEditingText,
-  sendMessage: sendMessageProp, // ✅ اگه از بیرون پاس داده بشه (مثلاً از GroupChatContainer)، همینو استفاده می‌کنیم
-  editMessage: editMessageProp, // ✅ همینطور برای ویرایش — اگه پاس داده بشه (حالت گروه)، اولویت داره
+  sendMessage: sendMessageProp, // ✅ اگه پاس داده بشه (گروه)، اولویت داره
 }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [imageFile, setImageFile] = useState(null);
+  const [documentFile, setDocumentFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  // نسخه‌ی پیش‌فرض store (مخصوص چت خصوصی)
-  const { sendMessage: storeSendMessage, editMessage: storeEditMessage, isSoundEnabled } = useChatStore();
-
-  // ✅ FIX: قبلاً همیشه editMessage (چت خصوصی) از store استفاده می‌شد، حتی
-  // توی گروه — که یعنی ویرایش پیام گروه هیچ‌وقت واقعاً به سرور گروه نمی‌رفت.
-  const doEditMessage = editMessageProp || storeEditMessage;
+  const { sendMessage: storeSendMessage, editMessage, isSoundEnabled } = useChatStore();
+  const doSendMessage = sendMessageProp || storeSendMessage;
 
   useEffect(() => {
     if (editingMessageId) {
@@ -30,40 +27,72 @@ export default function MessageInput({
     }
   }, [editingMessageId]);
 
-  const handleSend = (e) => {
-    e.preventDefault();
-    if (!text.trim() && !imageFile) return;
-    if (isSoundEnabled) playRandomKeyStrokeSound();
+  const buildPayload = (extra = {}) => ({
+    text: text.trim(),
+    image: imageFile || null,
+    file: documentFile || null,
+    fileName: documentFile?.name || null,
+    messageType: "text",
+    meta: null,
+    ...extra,
+  });
 
-    if (editingMessageId) {
-      doEditMessage(editingMessageId, text, imageFile);
-      setEditingMessageId(null);
-      setEditingText("");
-    } else if (sendMessageProp) {
-      // ✅ FIX: قبلاً اینجا sendMessageProp() بدون هیچ آرگومانی صدا زده می‌شد،
-      // برای همین عکسی که کاربر انتخاب کرده بود هیچ‌وقت به GroupChatContainer
-      // نمی‌رسید و گم می‌شد. الان imageFile رو پاس می‌دیم.
-      sendMessageProp(imageFile);
-    } else {
-      // چت خصوصی
-      storeSendMessage({ text: text.trim(), image: imageFile });
-    }
-
+  const resetAttachments = () => {
     setText("");
     setImageFile(null);
+    setDocumentFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return;
-    setImageFile(file);
+  const handleSend = (e) => {
+    e.preventDefault();
+    if (!text.trim() && !imageFile && !documentFile) return;
+    if (isSoundEnabled) playRandomKeyStrokeSound();
+
+    if (editingMessageId) {
+      editMessage(editingMessageId, text, imageFile);
+      setEditingMessageId(null);
+      setEditingText("");
+      setText("");
+      return;
+    }
+
+    let payload;
+    if (imageFile) {
+      payload = buildPayload({ messageType: "image", image: imageFile });
+    } else if (documentFile) {
+      payload = buildPayload({ messageType: "file", file: documentFile, fileName: documentFile.name });
+    } else {
+      payload = buildPayload({});
+    }
+
+    if (sendMessageProp) {
+      // تابع گروه خودش از state داخلی می‌خونه؛ فایل/عکس رو مستقیم بهش پاس می‌دیم
+      sendMessageProp(payload);
+    } else {
+      storeSendMessage(payload);
+    }
+
+    resetAttachments();
+  };
+
+  // ---- ارسال مستقیم از منوی + (بدون نیاز به دکمه‌ی ارسال، مثل لوکیشن/مخاطب) ----
+  const sendDirect = (payload) => {
+    if (isSoundEnabled) playRandomKeyStrokeSound();
+    const finalPayload = { text: "", image: null, file: null, fileName: null, meta: null, ...payload };
+    if (sendMessageProp) {
+      sendMessageProp(finalPayload);
+    } else {
+      storeSendMessage(finalPayload);
+    }
   };
 
   const removeImage = () => {
     setImageFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeDocument = () => {
+    setDocumentFile(null);
   };
 
   return (
@@ -87,6 +116,22 @@ export default function MessageInput({
         </div>
       )}
 
+      {documentFile && (
+        <div className="max-w-3xl mx-auto mb-3 flex items-center">
+          <div className="relative flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
+            <FileTextIcon className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+            <span className="text-slate-300 text-sm truncate max-w-[200px]">{documentFile.name}</span>
+            <button
+              onClick={removeDocument}
+              type="button"
+              className="text-slate-400 hover:text-slate-200 flex-shrink-0"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSend} className="max-w-3xl mx-auto flex space-x-4">
         <input
           type="text"
@@ -96,27 +141,21 @@ export default function MessageInput({
           className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4"
         />
 
-        <input
-          type="file"
-          accept="image/*"
-          ref={fileInputRef}
-          onChange={handleImageChange}
-          className="hidden"
+        <AttachMenu
+          onSelectGallery={(file) => setImageFile(file)}
+          onSelectCamera={(file) => setImageFile(file)}
+          onSelectDocument={(file) => setDocumentFile(file)}
+          onSelectLocation={(coords) =>
+            sendDirect({ messageType: "location", meta: { lat: coords.lat, lng: coords.lng } })
+          }
+          onSelectContact={(contact) =>
+            sendDirect({ messageType: "contact", meta: contact })
+          }
         />
 
         <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className={`bg-slate-800/50 text-slate-400 hover:text-slate-200 rounded-lg px-4 transition-colors ${
-            imageFile ? "text-cyan-500" : ""
-          }`}
-        >
-          <ImageIcon className="w-5 h-5" />
-        </button>
-
-        <button
           type="submit"
-          disabled={!text.trim() && !imageFile}
+          disabled={!text.trim() && !imageFile && !documentFile}
           className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-lg px-4 py-2 font-medium hover:from-cyan-600 hover:to-cyan-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <SendIcon className="w-5 h-5" />

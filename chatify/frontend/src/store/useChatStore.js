@@ -4,21 +4,24 @@ import {useAuthStore} from "./useAuthStore";
 
 const API_BASE_URL = "http://localhost:8000";
 
-// ✅ تابع امن برای تاریخ‌ها
 const safeDate = (value) => {
     if (!value) return new Date();
     const d = new Date(value);
     return isNaN(d.getTime()) ? new Date() : d;
 };
 
-// ======================================================================================================================
-// ✅ اتصال WebSocket سراسری وضعیت آنلاین — فقط یک نمونه برای کل اپ
-// (عمداً بیرون از zustand state نگه داشته می‌شه چون خود instance نیازی نیست reactive باشه)
-// ======================================================================================================================
+const fileToBase64 = (file) =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
 let onlineStatusSocket = null;
 let onlineStatusReconnectTimer = null;
 let onlineStatusConnecting = false;
-const messageEventListeners = new Set(); // برای new_message_notify / edit / delete
+const messageEventListeners = new Set();
 
 export const useChatStore = create((set, get) => ({
     allContacts: [],
@@ -39,7 +42,6 @@ export const useChatStore = create((set, get) => ({
 
     // ---------------- 🌐 اتصال مرکزی وضعیت آنلاین ----------------
     connectOnlineStatusSocket: () => {
-        // اگه از قبل وصله یا در حال وصل شدنه، دوباره وصل نشو
         if (
             onlineStatusConnecting ||
             (onlineStatusSocket &&
@@ -59,7 +61,6 @@ export const useChatStore = create((set, get) => ({
 
         socket.onopen = () => {
             onlineStatusConnecting = false;
-            console.log("🟢 Online-status WS connected (central)");
             socket.send(JSON.stringify({type: "get_contacts"}));
         };
 
@@ -77,20 +78,14 @@ export const useChatStore = create((set, get) => ({
                     get().setOnlineUsers(onlineIds);
                     break;
                 }
-
                 case "presence_update": {
-                    if (data.online) {
-                        get().addOnlineUser(String(data.userId));
-                    } else {
-                        get().removeOnlineUser(String(data.userId));
-                    }
+                    if (data.online) get().addOnlineUser(String(data.userId));
+                    else get().removeOnlineUser(String(data.userId));
                     break;
                 }
-
                 case "new_message_notify":
                 case "message_edit_notify":
                 case "message_delete_notify": {
-                    // این‌ها رو به هرکسی که subscribe کرده (مثلاً ChatsList) پاس بده
                     messageEventListeners.forEach((cb) => {
                         try {
                             cb(data);
@@ -100,7 +95,6 @@ export const useChatStore = create((set, get) => ({
                     });
                     break;
                 }
-
                 default:
                     break;
             }
@@ -112,10 +106,8 @@ export const useChatStore = create((set, get) => ({
 
         socket.onclose = (event) => {
             onlineStatusConnecting = false;
-            console.log("🔴 Online-status WS closed (central)", event.code);
             onlineStatusSocket = null;
 
-            // فقط اگه هنوز توکن داریم (یعنی لاگ‌اوت نکردیم) دوباره وصل شو
             const token = localStorage.getItem("accessToken");
             if (token) {
                 clearTimeout(onlineStatusReconnectTimer);
@@ -131,13 +123,12 @@ export const useChatStore = create((set, get) => ({
         onlineStatusReconnectTimer = null;
         onlineStatusConnecting = false;
         if (onlineStatusSocket) {
-            onlineStatusSocket.onclose = null; // جلوگیری از reconnect خودکار موقع logout
+            onlineStatusSocket.onclose = null;
             onlineStatusSocket.close();
             onlineStatusSocket = null;
         }
     },
 
-    // ✅ برای کامپوننت‌هایی مثل ChatsList که نیاز به رویدادهای پیام دارن (بدون ساختن socket جدا)
     addMessageEventListener: (cb) => {
         messageEventListeners.add(cb);
         return () => messageEventListeners.delete(cb);
@@ -163,9 +154,7 @@ export const useChatStore = create((set, get) => ({
         })),
 
     // ---------------- ⚙️ UI Settings ----------------
-    setActiveTab: (tab) => {
-        set({activeTab: tab});
-    },
+    setActiveTab: (tab) => set({activeTab: tab}),
 
     // ---------------- 👤 Selected User ----------------
     setSelectedUser: (user) => {
@@ -185,35 +174,20 @@ export const useChatStore = create((set, get) => ({
         user.name = user.name || `Contact ${user.raw?.contact || user._id}`;
         user.email = user.email || null;
 
-        set({
-            selectedUser: user,
-            selectedGroup: null,
-            messages: [],
-        });
+        set({selectedUser: user, selectedGroup: null, messages: []});
 
         get().getMessagesByUserId();
-
-        // ✅ فقط آیدی خام طرف مقابل رو می‌فرستیم — بک‌اند خودش با sorted([my_id, userId])
-        // نام روم یکتا و ثابت می‌سازه. ترکیب کردنش اینجا باعث دابل‌ترکیب و روم اشتباه می‌شد.
         get().subscribeToMessages(userId);
     },
 
     setSelectedGroup: (group) => {
         get().unsubscribeFromMessages();
-        set({
-            selectedGroup: group,
-            selectedUser: null,
-            messages: [],
-        });
+        set({selectedGroup: group, selectedUser: null, messages: []});
     },
 
     clearSelection: () => {
         get().unsubscribeFromMessages();
-        set({
-            selectedUser: null,
-            selectedGroup: null,
-            messages: [],
-        });
+        set({selectedUser: null, selectedGroup: null, messages: []});
     },
 
     // ---------------- 📇 Contacts & Chats ----------------
@@ -272,10 +246,7 @@ export const useChatStore = create((set, get) => ({
         try {
             const res = await fetch(`${API_BASE_URL}/chat/contacts/`, {
                 method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
+                headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
                 body: JSON.stringify({contact: contactId}),
             });
 
@@ -287,13 +258,9 @@ export const useChatStore = create((set, get) => ({
             }
 
             toast.success("مخاطب با موفقیت اضافه شد");
-
             set((state) => ({
-                searchResults: state.searchResults.map((u) =>
-                    u.id === contactId ? {...u, is_contact: true} : u
-                ),
+                searchResults: state.searchResults.map((u) => (u.id === contactId ? {...u, is_contact: true} : u)),
             }));
-
             get().getAllContacts();
             return true;
         } catch {
@@ -319,7 +286,6 @@ export const useChatStore = create((set, get) => ({
             set((state) => ({
                 allContacts: state.allContacts.filter((c) => c.raw?.id !== contactRecordId),
             }));
-
             toast.success("مخاطب حذف شد");
             return true;
         } catch {
@@ -348,6 +314,10 @@ export const useChatStore = create((set, get) => ({
                 receiverId: msg.receiver || msg.receiverId,
                 text: msg.text || "",
                 image: msg.image || null,
+                file: msg.file || null,
+                fileName: msg.file_name || msg.fileName || null,
+                messageType: msg.message_type || msg.messageType || "text",
+                meta: msg.meta || null,
                 createdAt: safeDate(msg.created_date || msg.createdAt),
                 isOptimistic: false,
             }));
@@ -359,7 +329,9 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    sendMessage: async ({text, image}) => {
+    // ✅ sendMessage حالا یه payload کامل قبول می‌کنه:
+    // { text, image (File|base64|null), file (File|base64|null), fileName, messageType, meta }
+    sendMessage: async (payload = {}) => {
         const {selectedUser, messages, socket} = get();
         const {authUser} = useAuthStore.getState();
         if (!selectedUser || !authUser?.id) return toast.error("No selected user or auth user");
@@ -368,16 +340,22 @@ export const useChatStore = create((set, get) => ({
         const receiverId = selectedUser._id;
         const tempId = `temp-${Date.now()}`;
 
+        const {text = "", image = null, file = null, fileName = null, messageType = "text", meta = null} = payload;
+
         let imageData = null;
         if (image instanceof File) {
-            imageData = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(image);
-            });
-        } else {
-            imageData = image || null;
+            imageData = await fileToBase64(image);
+        } else if (typeof image === "string") {
+            imageData = image;
+        }
+
+        let fileData = null;
+        let resolvedFileName = fileName;
+        if (file instanceof File) {
+            fileData = await fileToBase64(file);
+            resolvedFileName = fileName || file.name;
+        } else if (typeof file === "string") {
+            fileData = file;
         }
 
         const optimisticMessage = {
@@ -386,6 +364,10 @@ export const useChatStore = create((set, get) => ({
             receiverId,
             text,
             image: imageData,
+            file: fileData,
+            fileName: resolvedFileName,
+            messageType,
+            meta,
             createdAt: safeDate(),
             isOptimistic: true,
         };
@@ -396,7 +378,17 @@ export const useChatStore = create((set, get) => ({
             socket.send(
                 JSON.stringify({
                     type: "chat_message",
-                    message: {text, senderId, receiverId, tempId, image: imageData},
+                    message: {
+                        text,
+                        senderId,
+                        receiverId,
+                        tempId,
+                        image: imageData,
+                        file: fileData,
+                        fileName: resolvedFileName,
+                        messageType,
+                        meta,
+                    },
                 })
             );
         }
@@ -418,11 +410,7 @@ export const useChatStore = create((set, get) => ({
                 const data = JSON.parse(event.data);
                 if (!data) return;
 
-                // ✅ پیام تاییدیه‌ی اتصال (نه یه پیام واقعی) — نباید وارد لیست messages بشه
-                // چون _id/tempId نداره و باعث key تکراری/undefined توی React می‌شه
-                if (data.type === "connection") {
-                    return;
-                }
+                if (data.type === "connection") return;
 
                 if (data.type === "edit_message") {
                     const {messageId, newText} = data;
@@ -449,6 +437,8 @@ export const useChatStore = create((set, get) => ({
                         const newMessage = {
                             ...msg,
                             _id: msg.id || msg._id || msg.tempId,
+                            messageType: msg.messageType || msg.message_type || "text",
+                            fileName: msg.fileName || msg.file_name || null,
                             createdAt: safeDate(msg.createdAt || msg.created_date),
                             isOptimistic: false,
                         };
@@ -482,7 +472,6 @@ export const useChatStore = create((set, get) => ({
                             return {messages: updatedMessages};
                         }
 
-                        // ✅ جلوگیری از تکرار پیام (اگه به هر دلیلی همون _id از قبل توی لیست بود)
                         const alreadyThere = state.messages.some((m) => m._id === newMessage._id);
                         if (alreadyThere) return {};
 
@@ -512,9 +501,7 @@ export const useChatStore = create((set, get) => ({
         if (!msg) return toast.error("Message not found");
 
         set({
-            messages: messages.map((m) =>
-                m._id === messageId ? {...m, text: newText, edited: true} : m
-            ),
+            messages: messages.map((m) => (m._id === messageId ? {...m, text: newText, edited: true} : m)),
         });
 
         if (String(messageId).startsWith("temp-")) {

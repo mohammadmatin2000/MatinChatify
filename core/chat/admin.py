@@ -1,7 +1,9 @@
 from django.contrib import admin
 from .models import ContactModels, ChatModels, MessageModels
 # ======================================================================================================================
+# مدیریت مخاطبین در پنل ادمین
 class ContactAdmin(admin.ModelAdmin):
+
     # نمایش فیلدهای موردنظر در لیست
     list_display = ('user', 'contact')
 
@@ -9,7 +11,7 @@ class ContactAdmin(admin.ModelAdmin):
     list_filter = ('user', 'contact')
 
     # جستجو بر اساس فیلدهای مختلف
-    search_fields = ('user__username', 'contact__username')
+    search_fields = ('user__email', 'contact__email')
 
     # تنظیمات فیلدهای نمایش داده‌شده در فرم اضافه/ویرایش
     fields = ('user', 'contact')
@@ -19,7 +21,9 @@ class ContactAdmin(admin.ModelAdmin):
 admin.site.register(ContactModels, ContactAdmin)
 
 # ======================================================================================================================
+# مدیریت چت‌ها در پنل ادمین
 class ChatAdmin(admin.ModelAdmin):
+
     # نمایش فیلدهای موردنظر در لیست
     list_display = ('id', 'get_participants',)
 
@@ -37,22 +41,26 @@ class ChatAdmin(admin.ModelAdmin):
 
     # تنظیمات فیلدهای نمایش داده‌شده در فرم اضافه/ویرایش
     fields = ('participants',)
+
+
 # ثبت مدل Chat در پنل ادمین
 admin.site.register(ChatModels, ChatAdmin)
 
 # ======================================================================================================================
+# مدیریت پیام‌ها در پنل ادمین
 class MessageAdmin(admin.ModelAdmin):
+
     # نمایش فیلدهای موردنظر در لیست
-    list_display = ('sender', 'receiver', 'text', 'created_date', 'image')
+    list_display = ('sender', 'receiver', 'message_type', 'text', 'created_date', 'image')
 
     # فیلتر بر اساس فیلدهای مختلف
-    list_filter = ('sender', 'receiver', 'created_date')
+    list_filter = ('sender', 'receiver', 'message_type', 'created_date')
 
     # جستجو بر اساس فیلدهای مختلف
-    search_fields = ('sender__username', 'receiver__username', 'text')
+    search_fields = ('sender__email', 'receiver__email', 'text')
 
     # تنظیمات فیلدهای نمایش داده‌شده در فرم اضافه/ویرایش
-    fields = ('sender', 'receiver', 'text', 'image')
+    fields = ('sender', 'receiver', 'message_type', 'text', 'image', 'file', 'file_name', 'meta')
 
 
 # ثبت مدل Message در پنل ادمین

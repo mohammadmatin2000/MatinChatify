@@ -1,13 +1,13 @@
 from rest_framework import serializers
 from .models import ContactModels, ChatModels, MessageModels
-from accounts.models import User,Profile
+from accounts.models import User, Profile
 from django.db.models import Q
 # ======================================================================================================================
 class ContactSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     contact_email = serializers.EmailField(source="contact.email", read_only=True)
     profile = serializers.SerializerMethodField()
-    user = serializers.PrimaryKeyRelatedField(read_only=True)  # ✅ دیگه لازم نیست فرانت بفرسته
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = ContactModels
@@ -38,10 +38,12 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MessageModels
-        fields = ['id', 'sender', 'receiver', 'text', 'image', 'created_date', 'updated_date', 'last_message']
+        fields = [
+            'id', 'sender', 'receiver', 'message_type', 'text', 'image',
+            'file', 'file_name', 'meta', 'created_date', 'updated_date', 'last_message',
+        ]
 
     def get_last_message(self, obj):
-        # آخرین پیام بین این دو کاربر
         messages = MessageModels.objects.filter(
             Q(sender=obj.sender, receiver=obj.receiver) | Q(sender=obj.receiver, receiver=obj.sender)
         ).order_by('-created_date')
