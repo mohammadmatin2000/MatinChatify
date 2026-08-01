@@ -5,7 +5,7 @@ import ChatHeader from "./ChatHeader";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import MessageInput from "./MessageInput";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
-import { FileTextIcon, MapPinIcon, UserIcon, DownloadIcon } from "lucide-react";
+import { FileTextIcon, MapPinIcon, DownloadIcon, CheckIcon } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000";
 
@@ -21,6 +21,7 @@ function ChatContainer() {
     unsubscribeFromMessages,
     editMessage,
     deleteMessage,
+    votePoll,
   } = useChatStore();
 
   const { authUser } = useAuthStore();
@@ -46,9 +47,54 @@ function ChatContainer() {
 
   if (!selectedUser) return null;
 
-  // ✅ محتوای پیام بسته به نوعش
+  // ✅ رندر نظرسنجی (سؤال + گزینه‌ها با نوار درصد رأی)
+  const renderPoll = (msg) => {
+    const { question, options = [], multiple } = msg.meta || {};
+    const totalVotes = options.reduce((sum, o) => sum + (o.voters?.length || 0), 0);
+
+    return (
+      <div className="min-w-[220px]">
+        <p className="font-medium mb-2">{question}</p>
+        <div className="space-y-1.5">
+          {options.map((opt) => {
+            const voteCount = opt.voters?.length || 0;
+            const percent = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+            const hasVoted = opt.voters?.includes(authUser?.id);
+
+            return (
+              <button
+                key={opt.id}
+                onClick={() => votePoll(msg._id, opt.id)}
+                className="w-full text-right relative overflow-hidden rounded-lg bg-black/20 hover:bg-black/30 transition-colors p-2"
+              >
+                <div
+                  className="absolute inset-y-0 right-0 bg-cyan-400/20"
+                  style={{ width: `${percent}%` }}
+                />
+                <div className="relative flex items-center justify-between gap-2">
+                  <span className="text-sm flex items-center gap-1.5">
+                    {hasVoted && <CheckIcon className="w-3.5 h-3.5 text-cyan-300" />}
+                    {opt.text}
+                  </span>
+                  <span className="text-xs opacity-70 flex-shrink-0">{percent}%</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs opacity-60 mt-1.5">
+          {totalVotes} رأی {multiple ? "· چند انتخابی" : ""}
+        </p>
+      </div>
+    );
+  };
+
   const renderMessageContent = (msg) => {
     const type = msg.messageType || "text";
+
+    if (type === "poll" && msg.meta?.options) {
+      return renderPoll(msg);
+    }
 
     if (type === "location" && msg.meta?.lat) {
       const mapUrl = `https://www.google.com/maps?q=${msg.meta.lat},${msg.meta.lng}`;
@@ -139,7 +185,11 @@ function ChatContainer() {
                     className={`chat-bubble relative ${
                       isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"
                     }`}
-                    onClick={() => isOwner && setActiveMenu(activeMenu === msg._id ? null : msg._id)}
+                    onClick={() =>
+                      isOwner &&
+                      msg.messageType !== "poll" &&
+                      setActiveMenu(activeMenu === msg._id ? null : msg._id)
+                    }
                   >
                     {msg.image && (
                       <div className="mt-1">

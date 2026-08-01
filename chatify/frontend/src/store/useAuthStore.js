@@ -1,7 +1,12 @@
 import { create } from "zustand";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { useChatStore } from "./useChatStore";
+// ✅ FIX: قبلاً اینجا `import { useChatStore } from "./useChatStore";` بود
+// که یه وابستگی چرخشی استاتیک می‌ساخت (useChatStore.js هم بالای فایلش
+// useAuthStore رو import می‌کنه). این حلقه زیر HMR ویت گاهی باعث می‌شد
+// یکی از دو ماژول قبل از کامل شدن export هاش استفاده بشه و این خطا بده:
+// "does not provide an export named 'useChatStore'". با dynamic import
+// داخل خود توابع، این حلقه‌ی استاتیک قطع می‌شه.
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -32,6 +37,7 @@ export const useAuthStore = create((set, get) => ({
       set({ authUser: res.data });
 
       // ✅ اتصال مرکزی وضعیت آنلاین (فقط یک‌بار، idempotent)
+      const { useChatStore } = await import("./useChatStore");
       useChatStore.getState().connectOnlineStatusSocket();
     } catch (error) {
       console.error("❌ Auth check failed:", error);
@@ -56,6 +62,7 @@ export const useAuthStore = create((set, get) => ({
       toast.success("✅ ورود موفق!");
 
       // ✅ اتصال مرکزی وضعیت آنلاین
+      const { useChatStore } = await import("./useChatStore");
       useChatStore.getState().connectOnlineStatusSocket();
 
       return user;
@@ -76,6 +83,7 @@ export const useAuthStore = create((set, get) => ({
       set({ authUser: null });
 
       // ✅ بستن کامل اتصال مرکزی + پاکسازی state چت
+      const { useChatStore } = await import("./useChatStore");
       useChatStore.getState().logout();
     }
   },

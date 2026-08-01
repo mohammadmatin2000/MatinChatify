@@ -1,17 +1,10 @@
 import base64
-import binascii
 import uuid
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.core.exceptions import ObjectDoesNotExist
 from django.core.files.base import ContentFile
 from .models import Group, GroupMessages, GroupMember
-
-
-class PermissionDeniedError(Exception):
-    pass
-
 
 class GroupConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -52,46 +45,21 @@ class GroupConsumer(AsyncWebsocketConsumer):
             )
 
     async def receive(self, text_data):
-        try:
-            data = json.loads(text_data)
-        except (json.JSONDecodeError, TypeError):
-            await self.send_error("داده‌ی نامعتبر ارسال شد")
-            return
-
+        data = json.loads(text_data)
         action = data.get("action")
 
-        if action == "message":
-            await self.handle_send_message(data)
-        elif action == "edit_message":
-            await self.handle_edit_message(data)
-        elif action == "delete_message":
-            await self.handle_delete_message(data)
-        # اکشن‌های ناشناخته سایلنت نادیده گرفته می‌شن
+        if action == "message" and self.is_member_flag:
+            text = (data.get("text") or "").strip()
+            message_type = data.get("messageType", "text")
+            image_base64 = data.get("image")
+            file_base64 = data.get("file")
+            file_name = data.get("fileName")
+            meta = data.get("meta")
 
-    # -------------------------
-    # ارسال پیام (متن/عکس/فایل/لوکیشن/مخاطب)
-    # -------------------------
-    async def handle_send_message(self, data):
-        text = (data.get("text") or "").strip()
-        message_type = data.get("messageType", "text")
-        image_base64 = data.get("image")
-        file_base64 = data.get("file")
-        file_name = data.get("fileName")
-        meta = data.get("meta")
+            if not text and not image_base64 and not file_base64 and not meta:
+                return
 
-        if not text and not image_base64 and not file_base64 and not meta:
-            return
-
-        # ✅ FIX: چک زنده‌ی عضویت به‌جای فلگ کش‌شده‌ی موقع connect — اگه کاربر
-        # بعد از وصل‌شدن سوکت به گروه اضافه شده باشه هم بازم می‌تونه بفرسته.
-        is_member_now = await self.is_member()
-        self.is_member_flag = is_member_now
-        if not is_member_now:
-            await self.send_error("شما عضو این گروه نیستید")
-            return
-
-        try:
-            message_data = await self.save_message(
+            message = await self.save_message(
                 text=text,
                 message_type=message_type,
                 image_base64=image_base64,
@@ -99,80 +67,34 @@ class GroupConsumer(AsyncWebsocketConsumer):
                 file_name=file_name,
                 meta=meta,
             )
-        except ObjectDoesNotExist:
-            await self.send_error("گروه پیدا نشد")
-            return
-        except (ValueError, binascii.Error):
-            await self.send_error("فایل ارسالی نامعتبر است")
-            return
+            await self.channel_layer.group_send(
+                self.group_name,
+                {"type": "chat_message", "message": self.serialize_message(message)}
+            )
 
-        await self.channel_layer.group_send(
-            self.group_name,
-            {"type": "chat_message", "message": message_data},
-        )
+        elif action == "vote_poll" and self.is_member_flag:
+            message_id = data.get("messageId")
+            option_id = data.get("optionId")
+            if not message_id or not option_id:
+                return
 
-    # -------------------------
-    # ویرایش پیام (فقط نویسنده)
-    # -------------------------
-    async def handle_edit_message(self, data):
-        message_id = data.get("messageId")
-        new_text = (data.get("newText") or "").strip()
-        if not message_id or not new_text:
-            return
+            updated_meta = await self.vote_poll(message_id, option_id)
+            if updated_meta is None:
+                return
 
-        try:
-            await self.edit_message(message_id, new_text)
-        except ObjectDoesNotExist:
-            await self.send_error("پیام پیدا نشد")
-            return
-        except PermissionDeniedError:
-            await self.send_error("فقط نویسنده‌ی پیام می‌تونه ویرایشش کنه")
-            return
+            await self.channel_layer.group_send(
+                self.group_name,
+                {"type": "poll_update", "messageId": message_id, "meta": updated_meta}
+            )
 
-        await self.channel_layer.group_send(
-            self.group_name,
-            {"type": "edit_broadcast", "messageId": message_id, "newText": new_text},
-        )
-
-    # -------------------------
-    # حذف پیام (فقط نویسنده)
-    # -------------------------
-    async def handle_delete_message(self, data):
-        message_id = data.get("messageId")
-        if not message_id:
-            return
-
-        try:
-            await self.delete_message(message_id)
-        except ObjectDoesNotExist:
-            await self.send_error("پیام پیدا نشد")
-            return
-        except PermissionDeniedError:
-            await self.send_error("فقط نویسنده‌ی پیام می‌تونه حذفش کنه")
-            return
-
-        await self.channel_layer.group_send(
-            self.group_name,
-            {"type": "delete_broadcast", "messageId": message_id},
-        )
-
-    # -------------------------
-    # Broadcast handlers
-    # -------------------------
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({"type": "message", **event["message"]}))
 
-    async def edit_broadcast(self, event):
+    async def poll_update(self, event):
         await self.send(text_data=json.dumps({
-            "type": "edit_message",
+            "type": "poll_update",
             "messageId": event["messageId"],
-            "newText": event["newText"],
-        }))
-
-    async def delete_broadcast(self, event):
-        await self.send(text_data=json.dumps({
-            "type": "delete_message",
-            "messageId": event["messageId"],
+            "meta": event["meta"],
         }))
 
     async def user_event(self, event):
@@ -183,12 +105,6 @@ class GroupConsumer(AsyncWebsocketConsumer):
             "is_member": event.get("is_member", False),
         }))
 
-    async def send_error(self, message):
-        await self.send(text_data=json.dumps({"type": "error", "message": message}))
-
-    # -------------------------
-    # DB helpers
-    # -------------------------
     @database_sync_to_async
     def is_member(self):
         return GroupMember.objects.filter(user=self.user, group_id=self.group_id).exists()
@@ -199,17 +115,33 @@ class GroupConsumer(AsyncWebsocketConsumer):
 
         image_file = None
         if image_base64 and image_base64.startswith("data:image"):
-            fmt, imgstr = image_base64.split(";base64,")
-            ext = fmt.split("/")[-1]
-            image_file = ContentFile(base64.b64decode(imgstr), name=f"{uuid.uuid4()}.{ext}")
+            try:
+                fmt, imgstr = image_base64.split(";base64,")
+                ext = fmt.split("/")[-1]
+                image_file = ContentFile(base64.b64decode(imgstr), name=f"{uuid.uuid4()}.{ext}")
+            except Exception as e:
+                print("⚠️ Image decode error:", e)
 
         doc_file = None
         if file_base64 and ";base64," in file_base64:
-            header, filestr = file_base64.split(";base64,")
-            ext = (file_name.split(".")[-1] if file_name and "." in file_name else "bin")
-            doc_file = ContentFile(base64.b64decode(filestr), name=f"{uuid.uuid4()}.{ext}")
+            try:
+                header, filestr = file_base64.split(";base64,")
+                ext = (file_name.split(".")[-1] if file_name and "." in file_name else "bin")
+                doc_file = ContentFile(base64.b64decode(filestr), name=f"{uuid.uuid4()}.{ext}")
+            except Exception as e:
+                print("⚠️ File decode error:", e)
 
-        message = GroupMessages.objects.create(
+        if message_type == "poll" and meta and "options" in meta:
+            meta = {
+                "question": meta.get("question", ""),
+                "multiple": bool(meta.get("multiple", False)),
+                "options": [
+                    {"id": opt.get("id") or str(uuid.uuid4()), "text": opt.get("text", ""), "voters": []}
+                    for opt in meta["options"]
+                ],
+            }
+
+        return GroupMessages.objects.create(
             group=group,
             author=self.user,
             text=text,
@@ -220,25 +152,39 @@ class GroupConsumer(AsyncWebsocketConsumer):
             meta=meta,
         )
 
-        return self._serialize_message(message)
-
     @database_sync_to_async
-    def edit_message(self, message_id, new_text):
-        message = GroupMessages.objects.get(id=message_id, group_id=self.group_id)
-        if message.author_id != self.user.id:
-            raise PermissionDeniedError()
-        message.text = new_text
-        message.is_edited = True
-        message.save(update_fields=["text", "is_edited", "updated_date"])
+    def vote_poll(self, message_id, option_id):
+        try:
+            msg_obj = GroupMessages.objects.get(id=message_id, group_id=self.group_id, message_type="poll")
+        except GroupMessages.DoesNotExist:
+            return None
 
-    @database_sync_to_async
-    def delete_message(self, message_id):
-        message = GroupMessages.objects.get(id=message_id, group_id=self.group_id)
-        if message.author_id != self.user.id:
-            raise PermissionDeniedError()
-        message.is_deleted = True
-        message.text = ""
-        message.save(update_fields=["is_deleted", "text", "updated_date"])
+        meta = msg_obj.meta or {}
+        options = meta.get("options", [])
+        multiple = meta.get("multiple", False)
+        uid = self.user.id
+
+        target_option = next((o for o in options if o.get("id") == option_id), None)
+        if not target_option:
+            return None
+
+        already_voted = uid in target_option.get("voters", [])
+
+        if not multiple:
+            for o in options:
+                if uid in o.get("voters", []):
+                    o["voters"].remove(uid)
+
+        if already_voted:
+            if uid in target_option["voters"]:
+                target_option["voters"].remove(uid)
+        else:
+            target_option.setdefault("voters", []).append(uid)
+
+        meta["options"] = options
+        msg_obj.meta = meta
+        msg_obj.save()
+        return meta
 
     def serialize_user(self, user):
         return {
@@ -246,7 +192,7 @@ class GroupConsumer(AsyncWebsocketConsumer):
             "email": getattr(user, "email", None),
         }
 
-    def _serialize_message(self, message):
+    def serialize_message(self, message):
         return {
             "id": message.id,
             "text": message.text,
@@ -256,5 +202,5 @@ class GroupConsumer(AsyncWebsocketConsumer):
             "fileName": message.file_name,
             "meta": message.meta,
             "sender": self.serialize_user(message.author),
-            "created_date": message.created_date.isoformat(),
+            "created_date": message.created_date.isoformat()
         }

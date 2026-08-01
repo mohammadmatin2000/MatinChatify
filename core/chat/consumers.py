@@ -57,6 +57,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_edit_message(data)
             elif msg_type == "delete_message":
                 await self.handle_delete_message(data)
+            elif msg_type == "vote_poll":
+                await self.handle_vote_poll(data)
             else:
                 await self.send(json.dumps({"error": "Invalid message type"}))
         except Exception as e:
@@ -97,7 +99,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             except Exception as e:
                 print("⚠️ File decode error:", e)
 
-        # ذخیره در دیتابیس
+        # ✅ برای پیام‌های poll، به هر آپشن یه id بده و لیست voters خالی بساز
+        if message_type == "poll" and meta and "options" in meta:
+            meta = {
+                "question": meta.get("question", ""),
+                "multiple": bool(meta.get("multiple", False)),
+                "options": [
+                    {"id": opt.get("id") or str(uuid.uuid4()), "text": opt.get("text", ""), "voters": []}
+                    for opt in meta["options"]
+                ],
+            }
+
         saved = await sync_to_async(MessageModels.objects.create)(
             sender_id=sender_id,
             receiver_id=receiver_id,
@@ -202,6 +214,57 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "type": "delete_message",
             "messageId": event["messageId"]
         }))
+
+    # -------------------- ✅ رأی دادن به نظرسنجی --------------------
+    async def handle_vote_poll(self, data):
+        message_id = data.get("messageId")
+        option_id = data.get("optionId")
+        if not message_id or not option_id:
+            return
+
+        try:
+            msg_obj = await sync_to_async(MessageModels.objects.get)(id=message_id, message_type="poll")
+        except MessageModels.DoesNotExist:
+            return
+
+        meta = msg_obj.meta or {}
+        options = meta.get("options", [])
+        multiple = meta.get("multiple", False)
+        uid = self.user_id
+
+        target_option = next((o for o in options if o.get("id") == option_id), None)
+        if not target_option:
+            return
+
+        already_voted = uid in target_option.get("voters", [])
+
+        if not multiple:
+            # حالت تک‌انتخابی: از همه‌ی آپشن‌ها رأی این کاربر رو پاک کن
+            for o in options:
+                if uid in o.get("voters", []):
+                    o["voters"].remove(uid)
+
+        if already_voted:
+            if uid in target_option["voters"]:
+                target_option["voters"].remove(uid)
+        else:
+            target_option.setdefault("voters", []).append(uid)
+
+        meta["options"] = options
+        msg_obj.meta = meta
+        await sync_to_async(msg_obj.save)()
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {"type": "poll_update_broadcast", "messageId": message_id, "meta": meta}
+        )
+
+    async def poll_update_broadcast(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "poll_update",
+            "messageId": event["messageId"],
+            "meta": event["meta"],
+        }))
 # ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
 
@@ -296,4 +359,50 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
                 f"user_{uid}",
                 {"type": "presence_update", "userId": self.user_id, "online": online},
             )
+# ======================================================================================================================
+# مدیریت سیگنالینگ تماس صوتی/تصویری (WebRTC) - فقط پیام‌ها رو رله می‌کنه، خود صدا/تصویر از اینجا رد نمی‌شه
+class CallSignalingConsumer(AsyncWebsocketConsumer):
+
+    async def connect(self):
+        self.user = self.scope["user"]
+        self.user_id = self.user.id if self.user.is_authenticated else None
+
+        if not self.user_id:
+            await self.close()
+            return
+
+        # هر کاربر یه گروه شخصی داره تا بشه مستقیم پیام رو براش فرستاد
+        self.group_name = f"call_{self.user_id}"
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+
+        print(f"📞 اتصال سیگنالینگ تماس برقرار شد: user_id={self.user_id}")
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        print(f"📞 اتصال سیگنالینگ تماس قطع شد: user_id={self.user_id}")
+
+    async def receive(self, text_data=None):
+        try:
+            data = json.loads(text_data)
+            msg_type = data.get("type")
+            target_id = data.get("targetId")
+
+            if not target_id:
+                return
+
+            # پیام رو مستقیم به کاربر مقصد رله می‌کنیم
+            await self.channel_layer.group_send(
+                f"call_{target_id}",
+                {
+                    "type": "call_signal_relay",
+                    "payload": {**data, "fromId": self.user_id},
+                }
+            )
+        except Exception as e:
+            print("❌ خطا در سیگنالینگ تماس:", e)
+
+    # این متد وقتی صدا زده می‌شه که یه پیام از یه کاربر دیگه به این کاربر رله شده
+    async def call_signal_relay(self, event):
+        await self.send(text_data=json.dumps(event["payload"]))
 # ======================================================================================================================

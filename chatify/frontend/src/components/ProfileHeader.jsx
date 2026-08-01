@@ -13,6 +13,7 @@ import {
     UsersIcon,
 } from "lucide-react";
 import {useChatStore} from "../store/useChatStore";
+import {useCallStore} from "../store/useCallStore";
 import axios from "axios";
 
 const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
@@ -29,6 +30,10 @@ function ProfileHeader({onNewGroup}) {
         clearSearch,
         addContact,
     } = useChatStore();
+
+    // ✅ FIX: موقع خروج از حساب باید سوکت سیگنالینگ تماس هم بسته بشه،
+    // وگرنه با اکانت خارج‌شده باز می‌مونه و دوباره سعی می‌کنه reconnect کنه.
+    const {disconnectCallSocket} = useCallStore();
 
     const [profile, setProfile] = useState({first_name: "", image: "/avatar.png"});
     const [isEditingName, setIsEditingName] = useState(false);
@@ -84,6 +89,7 @@ function ProfileHeader({onNewGroup}) {
         } finally {
             localStorage.removeItem("accessToken");
             localStorage.removeItem("refreshToken");
+            disconnectCallSocket();
             logout();
             window.location.replace("/login");
         }
@@ -203,7 +209,6 @@ function ProfileHeader({onNewGroup}) {
 
             const newGroup = res.data;
 
-            // افزودن سازنده به عنوان ادمین گروه
             try {
                 await axios.post(
                     `${API_BASE_URL}/groups/members/`,
@@ -214,7 +219,6 @@ function ProfileHeader({onNewGroup}) {
                 console.warn("خطا در افزودن سازنده به گروه:", err.response?.data || err);
             }
 
-            // افزودن اعضای انتخاب‌شده
             await Promise.all(
                 selectedMemberIds.map((memberId) =>
                     axios
@@ -241,7 +245,6 @@ function ProfileHeader({onNewGroup}) {
     return (
         <div className="p-6 border-b border-slate-700/50 relative">
             <div className="flex items-center justify-between">
-                {/* بخش عکس و نام کاربر */}
                 <div className="flex items-center gap-3">
                     <div className="avatar online">
                         <button
@@ -308,7 +311,6 @@ function ProfileHeader({onNewGroup}) {
                         <LogOutIcon className="size-5"/>
                     </button>
 
-                    {/* دکمه + و منو ساخت گروه/مخاطب */}
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setShowNewMenu((prev) => !prev)}
@@ -321,7 +323,6 @@ function ProfileHeader({onNewGroup}) {
 
                     {showNewMenu && (
                         <>
-                            {/* overlay برای بستن منو با کلیک بیرون */}
                             <div className="fixed inset-0 z-40" onClick={() => setShowNewMenu(false)}/>
                             <div
                                 className="absolute top-full left-1/2 -translate-x-1/3 mt-2 bg-slate-800 rounded-lg shadow-lg w-56 flex flex-col z-50 overflow-hidden border border-slate-700/50">
@@ -360,7 +361,6 @@ function ProfileHeader({onNewGroup}) {
                 </div>
             </div>
 
-            {/* ========================== مودال افزودن مخاطب (سرچ با ایمیل) ========================== */}
             {showAddContact && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
@@ -447,7 +447,6 @@ function ProfileHeader({onNewGroup}) {
                 </div>
             )}
 
-            {/* ========================== مودال ساخت گروه ========================== */}
             {showCreateGroup && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"

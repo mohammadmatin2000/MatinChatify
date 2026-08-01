@@ -4,16 +4,25 @@ import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import SignUpPage from "./pages/SignUpPage";
 import { useAuthStore } from "./store/useAuthStore";
+import { useCallStore } from "./store/useCallStore";
 import { useEffect } from "react";
 import PageLoader from "./components/PageLoader";
 import { Toaster } from "react-hot-toast";
+import CallModal from "./components/CallModal";
 
 function App() {
   const { checkAuth, isCheckingAuth, authUser } = useAuthStore();
+  const connectCallSocket = useCallStore((state) => state.connectCallSocket);
 
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // بعد از تایید هویت کاربر، اتصال سیگنالینگ تماس رو برقرار می‌کنیم
+  // تا همیشه (مهم نیست کاربر توی کدوم صفحه‌ست) بتونه تماس ورودی دریافت کنه
+  useEffect(() => {
+    if (authUser) connectCallSocket();
+  }, [authUser, connectCallSocket]);
 
   if (isCheckingAuth) return <PageLoader />;
 
@@ -41,6 +50,9 @@ function App() {
       </Routes>
 
       <Toaster position="top-center" />
+
+      {/* مودال تماس - همیشه در دسترسه، بیرون از Routes، تا مهم نیست کاربر کدوم صفحه‌ست */}
+      <CallModal />
     </div>
   );
 }

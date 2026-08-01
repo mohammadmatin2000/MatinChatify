@@ -1,5 +1,5 @@
 import {useRef, useState, useEffect} from "react";
-import {ImageIcon, CameraIcon, FileTextIcon, MapPinIcon, UserIcon, PlusIcon} from "lucide-react";
+import {ImageIcon, CameraIcon, FileTextIcon, MapPinIcon, UserIcon, PlusIcon, BarChart3Icon, XIcon, TrashIcon} from "lucide-react";
 import {useChatStore} from "../store/useChatStore";
 import {createPortal} from "react-dom";
 import CameraCaptureModal from "./CameraCaptureModal";
@@ -10,14 +10,14 @@ const OPTIONS = [
     {key: "document", label: "داکیومنت", icon: FileTextIcon, color: "bg-indigo-500"},
     {key: "location", label: "لوکیشن", icon: MapPinIcon, color: "bg-green-500"},
     {key: "contact", label: "مخاطب", icon: UserIcon, color: "bg-cyan-500"},
+    {key: "poll", label: "نظرسنجی", icon: BarChart3Icon, color: "bg-orange-500"}, // ✅ NEW
 ];
 
-function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelectLocation, onSelectContact}) {
+function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelectLocation, onSelectContact, onSelectPoll}) {
     const [isOpen, setIsOpen] = useState(false);
     const [showContactPicker, setShowContactPicker] = useState(false);
-    // ✅ NEW: به‌جای input فایل با capture (که دوربین سیستم‌عامل رو باز می‌کرد)،
-    // حالا یه مودال دوربین واقعی داخل اپ داریم (getUserMedia + preview زنده)
     const [showCamera, setShowCamera] = useState(false);
+    const [showPollModal, setShowPollModal] = useState(false); // ✅ NEW
     const [menuPos, setMenuPos] = useState({bottom: 0, right: 0});
     const menuRef = useRef(null);
     const buttonRef = useRef(null);
@@ -46,7 +46,7 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
         if (!isOpen && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
             setMenuPos({
-                bottom: window.innerHeight - rect.top + 8, // 8px فاصله از دکمه
+                bottom: window.innerHeight - rect.top + 8,
                 right: window.innerWidth - rect.right,
             });
         }
@@ -60,7 +60,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 galleryInputRef.current?.click();
                 break;
             case "camera":
-                // ✅ NEW: به‌جای کلیک روی input مخفی، مودال دوربین واقعی رو باز کن
                 setShowCamera(true);
                 break;
             case "document":
@@ -72,6 +71,9 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
             case "contact":
                 getAllContacts();
                 setShowContactPicker(true);
+                break;
+            case "poll": // ✅ NEW
+                setShowPollModal(true);
                 break;
             default:
                 break;
@@ -112,7 +114,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
             {isOpen &&
                 createPortal(
                     <>
-                        {/* overlay شفاف برای بستن با کلیک بیرون */}
                         <div className="fixed inset-0 z-[90]" onClick={() => setIsOpen(false)}/>
 
                         <div
@@ -142,7 +143,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                     document.body
                 )}
 
-            {/* input های مخفی (گالری/داکیومنت — دوربین دیگه از اینجا نیست) */}
             <input
                 type="file"
                 accept="image/*,video/*"
@@ -165,7 +165,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 }}
             />
 
-            {/* ✅ NEW: مودال دوربین واقعی داخل اپ */}
             <CameraCaptureModal
                 isOpen={showCamera}
                 onClose={() => setShowCamera(false)}
@@ -227,7 +226,139 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                     </div>
                 </div>
             )}
+
+            {/* ✅ NEW: مودال ساخت نظرسنجی */}
+            {showPollModal && (
+                <PollCreateModal
+                    onClose={() => setShowPollModal(false)}
+                    onCreate={(pollData) => {
+                        onSelectPoll(pollData);
+                        setShowPollModal(false);
+                    }}
+                />
+            )}
         </div>
+    );
+}
+
+// ======================================================================================================================
+// ✅ NEW: مودال ساخت نظرسنجی (سؤال + حداقل ۲ گزینه، امکان افزودن/حذف گزینه)
+// ======================================================================================================================
+function PollCreateModal({onClose, onCreate}) {
+    const [question, setQuestion] = useState("");
+    const [options, setOptions] = useState(["", ""]);
+    const [multiple, setMultiple] = useState(false);
+
+    const updateOption = (idx, value) => {
+        setOptions((prev) => prev.map((o, i) => (i === idx ? value : o)));
+    };
+
+    const addOption = () => {
+        if (options.length >= 10) return;
+        setOptions((prev) => [...prev, ""]);
+    };
+
+    const removeOption = (idx) => {
+        if (options.length <= 2) return;
+        setOptions((prev) => prev.filter((_, i) => i !== idx));
+    };
+
+    const canSubmit = question.trim() && options.filter((o) => o.trim()).length >= 2;
+
+    const handleSubmit = () => {
+        if (!canSubmit) return;
+        onCreate({
+            question: question.trim(),
+            multiple,
+            options: options.filter((o) => o.trim()).map((text) => ({text: text.trim()})),
+        });
+    };
+
+    return createPortal(
+        <div
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={onClose}
+        >
+            <div
+                className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden border border-slate-700/50"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
+                    <h3 className="text-slate-100 font-semibold text-base">ساخت نظرسنجی</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+                        <XIcon className="w-5 h-5"/>
+                    </button>
+                </div>
+
+                <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                    <div>
+                        <label className="text-slate-400 text-xs mb-1 block">سؤال</label>
+                        <input
+                            type="text"
+                            value={question}
+                            onChange={(e) => setQuestion(e.target.value)}
+                            placeholder="مثلاً: کدوم روز جمع بشیم؟"
+                            className="w-full bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:ring-1 focus:ring-cyan-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="text-slate-400 text-xs mb-2 block">گزینه‌ها</label>
+                        <div className="space-y-2">
+                            {options.map((opt, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={opt}
+                                        onChange={(e) => updateOption(idx, e.target.value)}
+                                        placeholder={`گزینه ${idx + 1}`}
+                                        className="flex-1 bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:ring-1 focus:ring-cyan-500"
+                                    />
+                                    {options.length > 2 && (
+                                        <button
+                                            onClick={() => removeOption(idx)}
+                                            className="text-slate-500 hover:text-red-400 transition-colors flex-shrink-0"
+                                        >
+                                            <TrashIcon className="w-4 h-4"/>
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {options.length < 10 && (
+                            <button
+                                onClick={addOption}
+                                className="mt-2 text-cyan-400 hover:text-cyan-300 text-xs font-medium transition-colors"
+                            >
+                                + افزودن گزینه
+                            </button>
+                        )}
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={multiple}
+                            onChange={(e) => setMultiple(e.target.checked)}
+                            className="w-4 h-4 accent-cyan-500"
+                        />
+                        <span className="text-slate-300 text-sm">اجازه‌ی انتخاب چند گزینه</span>
+                    </label>
+                </div>
+
+                <div className="p-4 border-t border-slate-700/50 flex-shrink-0">
+                    <button
+                        onClick={handleSubmit}
+                        disabled={!canSubmit}
+                        className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    >
+                        ایجاد نظرسنجی
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
     );
 }
 

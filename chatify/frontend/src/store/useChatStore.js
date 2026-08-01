@@ -329,8 +329,6 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ✅ sendMessage حالا یه payload کامل قبول می‌کنه:
-    // { text, image (File|base64|null), file (File|base64|null), fileName, messageType, meta }
     sendMessage: async (payload = {}) => {
         const {selectedUser, messages, socket} = get();
         const {authUser} = useAuthStore.getState();
@@ -394,6 +392,13 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    // ✅ رأی دادن به نظرسنجی (چت خصوصی)
+    votePoll: (messageId, optionId) => {
+        const {socket} = get();
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({type: "vote_poll", messageId, optionId}));
+    },
+
     // ---------------- 🧠 WebSocket چت (فقط برای مکالمه‌ی باز) ----------------
     subscribeToMessages: (roomName) => {
         if (!roomName) return;
@@ -426,6 +431,17 @@ export const useChatStore = create((set, get) => ({
                     const {messageId} = data;
                     set((state) => ({
                         messages: state.messages.filter((m) => m._id !== messageId),
+                    }));
+                    return;
+                }
+
+                // ✅ آپدیت لحظه‌ای نتیجه‌ی رأی‌گیری
+                if (data.type === "poll_update") {
+                    const {messageId, meta} = data;
+                    set((state) => ({
+                        messages: state.messages.map((m) =>
+                            m._id === messageId ? {...m, meta} : m
+                        ),
                     }));
                     return;
                 }

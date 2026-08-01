@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
@@ -18,6 +17,7 @@ import {
   FileTextIcon,
   MapPinIcon,
   DownloadIcon,
+  CheckIcon,
 } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000";
@@ -32,26 +32,20 @@ const fileToBase64 = (file) =>
   });
 
 function GroupChatContainer({ group, onBack }) {
-  // ✅ FIX: چک اعتبار group قبل از تمام هوک‌ها انجام نمی‌شه (نقض Rules of
-  // Hooks) — به‌جاش groupId با optional chaining امن محاسبه می‌شه و
-  // return null فقط بعد از تمام هوک‌ها (پایین فایل) اجرا می‌شه.
-  const groupId = group?._id || group?.id;
+  if (!group || !(group._id || group.id)) return null;
+
+  const groupId = group._id || group.id;
   const accessToken = localStorage.getItem("accessToken");
-  // ✅ FIX: قبلاً با JSON.parse(localStorage.getItem("authUser")) خونده
-  // می‌شد که همیشه {} خالی برمی‌گردوند. از هوک useAuthStore می‌خونیم،
-  // دقیقاً مثل ChatContainer.jsx (نسخه‌ی سالم چت خصوصی).
-  const { authUser } = useAuthStore();
+  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
 
-  const { allContacts, getAllContacts, onlineUsers } = useChatStore();
+  const { allContacts, getAllContacts } = useChatStore();
 
-  const [localGroup, setLocalGroup] = useState(group || {});
+  const [localGroup, setLocalGroup] = useState(group);
 
   const [messages, setMessages] = useState([]);
   const [isMessagesLoading, setIsMessagesLoading] = useState(true);
   const [text, setText] = useState("");
   const [activeMenu, setActiveMenu] = useState(null);
-  const [editingMessageId, setEditingMessageId] = useState(null);
-  const [editingText, setEditingText] = useState("");
   const messageEndRef = useRef(null);
   const socketRef = useRef(null);
   const textRef = useRef(text);
@@ -62,14 +56,9 @@ function GroupChatContainer({ group, onBack }) {
   const [isMembersLoading, setIsMembersLoading] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState(group?.name || "");
+  const [editedName, setEditedName] = useState(localGroup.name || "");
   const nameInputRef = useRef(null);
   const avatarInputRef = useRef(null);
-
-  // ✅ NEW: ویرایش توضیحات گروه — دقیقاً همون الگوی ویرایش اسم گروه
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editedDescription, setEditedDescription] = useState(group?.description || "");
-  const descriptionInputRef = useRef(null);
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [selectedNewMemberIds, setSelectedNewMemberIds] = useState([]);
@@ -81,10 +70,8 @@ function GroupChatContainer({ group, onBack }) {
   const isAdmin = localGroup.my_role === "admin" || localGroup.owner?.id === authUser?.id;
 
   useEffect(() => {
-    if (!group) return;
     setLocalGroup(group);
     setEditedName(group.name || "");
-    setEditedDescription(group.description || "");
   }, [group]);
 
   useEffect(() => {
@@ -98,7 +85,6 @@ function GroupChatContainer({ group, onBack }) {
   }, []);
 
   const fetchMembers = useCallback(async () => {
-    if (!groupId || !accessToken) return;
     setIsMembersLoading(true);
     try {
       const res = await axios.get(`${API_BASE_URL}/groups/members/?group=${groupId}`, {
@@ -139,22 +125,11 @@ function GroupChatContainer({ group, onBack }) {
         fetchMembers();
       }
 
-      if (data.type === "error") {
-        toast.error(data.message || "خطا در ارسال پیام");
-      }
-
-      // ✅ FIX: همگام‌سازی ویرایش/حذف که از سرور broadcast می‌شه (قبلاً اصلاً
-      // هندل نمی‌شد چون بک‌اند هم این اکشن‌ها رو نداشت).
-      if (data.type === "edit_message") {
+      // ✅ آپدیت لحظه‌ای رأی‌گیری
+      if (data.type === "poll_update") {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === data.messageId ? { ...m, text: data.newText, edited: true } : m
-          )
+          prev.map((m) => (m.id === data.messageId ? { ...m, meta: data.meta } : m))
         );
-      }
-
-      if (data.type === "delete_message") {
-        setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
       }
     };
 
@@ -168,11 +143,6 @@ function GroupChatContainer({ group, onBack }) {
   // دریافت پیام‌ها از API
   // -------------------------
   useEffect(() => {
-    if (!groupId || !accessToken) {
-      setIsMessagesLoading(false);
-      return;
-    }
-
     let isMounted = true;
 
     const fetchMessages = async () => {
@@ -200,13 +170,10 @@ function GroupChatContainer({ group, onBack }) {
   }, [messages]);
 
   // -------------------------
-  // ارسال پیام — payload کامل (متن/عکس/فایل/لوکیشن/مخاطب)
+  // ارسال پیام (پیام معمولی/عکس/فایل/لوکیشن/مخاطب/نظرسنجی)
   // -------------------------
   const sendMessage = async (payload = {}) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      toast.error("اتصال چت برقرار نیست، لطفاً صبر کن یا صفحه رو رفرش کن");
-      return;
-    }
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
 
     const finalText = payload.text !== undefined ? payload.text : textRef.current;
     const { image = null, file = null, fileName = null, messageType = "text", meta = null } = payload;
@@ -241,23 +208,10 @@ function GroupChatContainer({ group, onBack }) {
     setText("");
   };
 
-  // -------------------------
-  // ویرایش پیام (فقط نویسنده‌ی خودش) — واقعاً به سرور می‌فرسته
-  // -------------------------
-  const handleEditMessage = (messageId, newText) => {
-    const trimmed = (newText || "").trim();
-    if (!trimmed || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(
-      JSON.stringify({ action: "edit_message", messageId, newText: trimmed })
-    );
-  };
-
-  // -------------------------
-  // حذف پیام (فقط نویسنده‌ی خودش) — واقعاً به سرور می‌فرسته
-  // -------------------------
-  const handleDeleteMessage = (messageId) => {
+  // ✅ رأی دادن به نظرسنجی گروه
+  const votePoll = (messageId, optionId) => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(JSON.stringify({ action: "delete_message", messageId }));
+    socketRef.current.send(JSON.stringify({ action: "vote_poll", messageId, optionId }));
   };
 
   // -------------------------
@@ -282,31 +236,6 @@ function GroupChatContainer({ group, onBack }) {
     } catch (err) {
       console.error("❌ خطا در تغییر اسم گروه:", err.response?.data || err);
       setEditedName(localGroup.name || "");
-    }
-  };
-
-  // -------------------------
-  // ✅ NEW: ویرایش توضیحات گروه (فقط ادمین) — همون الگوی اسم گروه
-  // -------------------------
-  useEffect(() => {
-    if (isEditingDescription && descriptionInputRef.current) descriptionInputRef.current.focus();
-  }, [isEditingDescription]);
-
-  const handleSaveDescription = async () => {
-    const trimmed = editedDescription.trim();
-    setIsEditingDescription(false);
-    if (trimmed === (localGroup.description || "")) return;
-
-    try {
-      const res = await axios.patch(
-        `${API_BASE_URL}/groups/groups/${groupId}/`,
-        { description: trimmed },
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      setLocalGroup((prev) => ({ ...prev, ...res.data }));
-    } catch (err) {
-      console.error("❌ خطا در تغییر توضیحات گروه:", err.response?.data || err);
-      setEditedDescription(localGroup.description || "");
     }
   };
 
@@ -415,10 +344,55 @@ function GroupChatContainer({ group, onBack }) {
   };
 
   // -------------------------
-  // محتوای پیام بسته به نوعش (لوکیشن/مخاطب/فایل)
+  // رندر نظرسنجی
+  // -------------------------
+  const renderPoll = (msg) => {
+    const { question, options = [], multiple } = msg.meta || {};
+    const totalVotes = options.reduce((sum, o) => sum + (o.voters?.length || 0), 0);
+
+    return (
+      <div className="min-w-[220px]">
+        <p className="font-medium mb-2">{question}</p>
+        <div className="space-y-1.5">
+          {options.map((opt) => {
+            const voteCount = opt.voters?.length || 0;
+            const percent = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+            const hasVoted = opt.voters?.includes(authUser?.id);
+
+            return (
+              <button
+                key={opt.id}
+                onClick={() => votePoll(msg.id, opt.id)}
+                className="w-full text-right relative overflow-hidden rounded-lg bg-black/20 hover:bg-black/30 transition-colors p-2"
+              >
+                <div className="absolute inset-y-0 right-0 bg-cyan-400/20" style={{ width: `${percent}%` }} />
+                <div className="relative flex items-center justify-between gap-2">
+                  <span className="text-sm flex items-center gap-1.5">
+                    {hasVoted && <CheckIcon className="w-3.5 h-3.5 text-cyan-300" />}
+                    {opt.text}
+                  </span>
+                  <span className="text-xs opacity-70 flex-shrink-0">{percent}%</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs opacity-60 mt-1.5">
+          {totalVotes} رأی {multiple ? "· چند انتخابی" : ""}
+        </p>
+      </div>
+    );
+  };
+
+  // -------------------------
+  // محتوای پیام بسته به نوعش
   // -------------------------
   const renderMessageContent = (msg) => {
     const type = msg.messageType || msg.message_type || "text";
+
+    if (type === "poll" && msg.meta?.options) {
+      return renderPoll(msg);
+    }
 
     if (type === "location" && msg.meta?.lat) {
       const mapUrl = `https://www.google.com/maps?q=${msg.meta.lat},${msg.meta.lng}`;
@@ -512,7 +486,7 @@ function GroupChatContainer({ group, onBack }) {
   );
 
   // -------------------------
-  // پنل اطلاعات گروه / اعضا (با وضعیت آنلاین)
+  // پنل اطلاعات گروه / اعضا
   // -------------------------
   const GroupInfoPanel = () => {
     if (!showInfoPanel) return null;
@@ -578,41 +552,8 @@ function GroupChatContainer({ group, onBack }) {
                 </div>
               )}
 
-              {/* ✅ NEW: توضیحات گروه حالا قابل ویرایشه (فقط ادمین) — دقیقاً الگوی اسم گروه */}
-              {isEditingDescription ? (
-                <textarea
-                  ref={descriptionInputRef}
-                  value={editedDescription}
-                  onChange={(e) => setEditedDescription(e.target.value)}
-                  onBlur={handleSaveDescription}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSaveDescription();
-                    }
-                  }}
-                  rows={2}
-                  placeholder="توضیحاتی برای گروه بنویس..."
-                  className="w-full bg-slate-900/60 border border-cyan-400/60 outline-none text-slate-300 text-sm text-center px-3 py-1.5 rounded-lg resize-none"
-                />
-              ) : isAdmin ? (
-                <div
-                  className="flex items-center gap-1.5 max-w-full px-2 cursor-pointer group/desc"
-                  onClick={() => setIsEditingDescription(true)}
-                >
-                  <p
-                    className={`text-sm text-center truncate ${
-                      localGroup.description ? "text-slate-400" : "text-slate-600 italic"
-                    }`}
-                  >
-                    {localGroup.description || "افزودن توضیحات..."}
-                  </p>
-                  <PencilIcon className="w-3.5 h-3.5 text-slate-500 opacity-0 group-hover/desc:opacity-100 transition-opacity flex-shrink-0" />
-                </div>
-              ) : (
-                localGroup.description && (
-                  <p className="text-slate-400 text-sm text-center">{localGroup.description}</p>
-                )
+              {localGroup.description && (
+                <p className="text-slate-400 text-sm text-center">{localGroup.description}</p>
               )}
             </div>
 
@@ -634,34 +575,25 @@ function GroupChatContainer({ group, onBack }) {
                 {members.map((m) => {
                   const isOwnerRow = m.user === localGroup.owner?.id;
                   const isConfirmingRemove = confirmRemoveId === m.id;
-                  const isOnline = onlineUsers.includes(String(m.user));
 
                   return (
                     <div
                       key={m.id}
                       className="group/member flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/40 transition-colors"
                     >
-                      <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
                         <img
                           src={resolveMemberAvatar(m.user_detail?.image)}
                           alt={m.user_detail?.name}
                           className="w-full h-full object-cover"
                           onError={(e) => (e.target.src = "/avatar.png")}
                         />
-                        {isOnline && (
-                          <span
-                            className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-800"
-                            title="آنلاین"
-                          />
-                        )}
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="text-slate-200 text-sm truncate">
                           {m.user_detail?.name || m.user_detail?.email}
                         </span>
-                        <span className={`text-xs truncate ${isOnline ? "text-green-400" : "text-slate-500"}`}>
-                          {isOnline ? "آنلاین" : m.user_detail?.email}
-                        </span>
+                        <span className="text-slate-500 text-xs truncate">{m.user_detail?.email}</span>
                       </div>
 
                       {m.role === "admin" && (
@@ -790,9 +722,6 @@ function GroupChatContainer({ group, onBack }) {
   // -------------------------
   // Render
   // -------------------------
-  // ✅ FIX: چک نهایی بعد از تمام هوک‌ها
-  if (!groupId) return null;
-
   return (
     <div className="flex flex-col h-full">
       <GroupChatHeader />
@@ -807,20 +736,18 @@ function GroupChatContainer({ group, onBack }) {
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.map((msg) => {
-              // ✅ مقاوم در برابر sender/author چه آبجکت باشه چه عدد خام
-              const rawSenderId = msg.sender?.id ?? msg.sender ?? msg.author?.id ?? msg.author;
-              const isOwner =
-                rawSenderId !== undefined &&
-                rawSenderId !== null &&
-                String(rawSenderId) === String(authUser?.id ?? "");
+              const isOwner = msg.sender?.id === authUser?.id || msg.author?.id === authUser?.id;
               const senderInfo = msg.sender || msg.author;
+              const messageType = msg.messageType || msg.message_type || "text";
               const specialContent = renderMessageContent(msg);
 
               return (
                 <div key={msg.id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
                   <div
                     className={`chat-bubble relative ${isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"}`}
-                    onClick={() => isOwner && setActiveMenu(activeMenu === msg.id ? null : msg.id)}
+                    onClick={() =>
+                      isOwner && messageType !== "poll" && setActiveMenu(activeMenu === msg.id ? null : msg.id)
+                    }
                   >
                     {!isOwner && (
                       <p className="text-xs text-cyan-300 mb-1">{senderInfo?.name || senderInfo?.email}</p>
@@ -832,10 +759,7 @@ function GroupChatContainer({ group, onBack }) {
                           src={resolveUrl(msg.image)}
                           alt="Shared"
                           className="rounded-lg max-h-64 object-contain cursor-pointer hover:opacity-90 transition"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.open(resolveUrl(msg.image), "_blank");
-                          }}
+                          onClick={() => window.open(resolveUrl(msg.image), "_blank")}
                         />
                       </div>
                     )}
@@ -857,8 +781,7 @@ function GroupChatContainer({ group, onBack }) {
                           <button
                             className="px-3 py-1 text-xs text-cyan-200 hover:bg-slate-600"
                             onClick={() => {
-                              setEditingMessageId(msg.id);
-                              setEditingText(msg.text);
+                              setText(msg.text);
                               setActiveMenu(null);
                             }}
                           >
@@ -867,10 +790,7 @@ function GroupChatContainer({ group, onBack }) {
                         )}
                         <button
                           className="px-3 py-1 text-xs text-red-400 hover:bg-slate-600"
-                          onClick={() => {
-                            handleDeleteMessage(msg.id);
-                            setActiveMenu(null);
-                          }}
+                          onClick={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
                         >
                           حذف
                         </button>
@@ -885,16 +805,7 @@ function GroupChatContainer({ group, onBack }) {
         )}
       </div>
 
-      <MessageInput
-        text={text}
-        setText={setText}
-        editingMessageId={editingMessageId}
-        editingText={editingText}
-        setEditingMessageId={setEditingMessageId}
-        setEditingText={setEditingText}
-        sendMessage={sendMessage}
-        editMessage={handleEditMessage}
-      />
+      <MessageInput text={text} setText={setText} sendMessage={sendMessage} />
     </div>
   );
 }
