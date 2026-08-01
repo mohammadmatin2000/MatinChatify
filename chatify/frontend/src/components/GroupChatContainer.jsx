@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
+import { useCallStore } from "../store/useCallStore";
+import GroupCallModal from "./GroupCallModal";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
@@ -17,8 +20,15 @@ import {
   FileTextIcon,
   MapPinIcon,
   DownloadIcon,
+  Pin,
+  Star,
   CheckIcon,
+  PhoneIcon,
+  VideoIcon,
 } from "lucide-react";
+import MessageContextMenu from "./MessageContextMenu";
+import MessageInfoModal from "./MessageInfoModal";
+import ForwardMessageModal from "./ForwardMessageModal";
 
 const API_BASE_URL = "http://localhost:8000";
 const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_BASE_URL}${url}`);
@@ -32,20 +42,27 @@ const fileToBase64 = (file) =>
   });
 
 function GroupChatContainer({ group, onBack }) {
-  if (!group || !(group._id || group.id)) return null;
-
-  const groupId = group._id || group.id;
+  // ✅ FIX: چک اعتبار group قبل از تمام هوک‌ها انجام نمی‌شه (نقض Rules of
+  // Hooks) — به‌جاش groupId با optional chaining امن محاسبه می‌شه و
+  // return null فقط بعد از تمام هوک‌ها (پایین فایل) اجرا می‌شه.
+  const groupId = group?._id || group?.id;
   const accessToken = localStorage.getItem("accessToken");
-  const authUser = JSON.parse(localStorage.getItem("authUser") || "{}");
+  // ✅ FIX: قبلاً با JSON.parse(localStorage.getItem("authUser")) خونده
+  // می‌شد که همیشه {} خالی برمی‌گردوند. از هوک useAuthStore می‌خونیم،
+  // دقیقاً مثل ChatContainer.jsx (نسخه‌ی سالم چت خصوصی).
+  const { authUser } = useAuthStore();
 
-  const { allContacts, getAllContacts } = useChatStore();
+  const { allContacts, getAllContacts, onlineUsers } = useChatStore();
+  // ✅ NEW: برای شروع/مدیریت تماس صوتی/تصویری گروهی
+  const { startGroupCall, groupCallStatus, connectCallSocket } = useCallStore();
 
-  const [localGroup, setLocalGroup] = useState(group);
+  const [localGroup, setLocalGroup] = useState(group || {});
 
   const [messages, setMessages] = useState([]);
   const [isMessagesLoading, setIsMessagesLoading] = useState(true);
   const [text, setText] = useState("");
-  const [activeMenu, setActiveMenu] = useState(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingText, setEditingText] = useState("");
   const messageEndRef = useRef(null);
   const socketRef = useRef(null);
   const textRef = useRef(text);
@@ -56,9 +73,14 @@ function GroupChatContainer({ group, onBack }) {
   const [isMembersLoading, setIsMembersLoading] = useState(false);
 
   const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState(localGroup.name || "");
+  const [editedName, setEditedName] = useState(group?.name || "");
   const nameInputRef = useRef(null);
   const avatarInputRef = useRef(null);
+
+  // ✅ NEW: ویرایش توضیحات گروه — دقیقاً همون الگوی ویرایش اسم گروه
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState(group?.description || "");
+  const descriptionInputRef = useRef(null);
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [selectedNewMemberIds, setSelectedNewMemberIds] = useState([]);
@@ -67,11 +89,28 @@ function GroupChatContainer({ group, onBack }) {
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
   const confirmRemoveTimerRef = useRef(null);
 
+  // ✅ NEW: منوی کامل پیام (ریپلای/فوروارد/کپی/استار/پین/اطلاعات/ترجمه/ادیت/دیلیت)
+  const [activeMenuData, setActiveMenuData] = useState(null); // { msg, senderName, isOwner, position }
+  const [replyTarget, setReplyTarget] = useState(null); // { id, text, senderName }
+  // ⚠️ استار و پین فعلاً فقط local هستن (با رفرش پاک می‌شن) چون بک‌اند
+  // فیلدی براشون نداره — وقتی مدل پیام رو دیدم پایدارش می‌کنم
+  const [starredIds, setStarredIds] = useState(new Set());
+  const [pinnedMessageId, setPinnedMessageId] = useState(null);
+  const [forwardMessage, setForwardMessage] = useState(null);
+  const [infoMessageData, setInfoMessageData] = useState(null);
+
+  // ✅ NEW: برای long-press واقعی روی موبایل (که با contextmenu/کلیک ساده فرق داره)
+  const longPressTimerRef = useRef(null);
+  const longPressTriggeredRef = useRef(false);
+
   const isAdmin = localGroup.my_role === "admin" || localGroup.owner?.id === authUser?.id;
 
   useEffect(() => {
+    if (!group) return;
     setLocalGroup(group);
     setEditedName(group.name || "");
+    setEditedDescription(group.description || "");
+    setPinnedMessageId(null);
   }, [group]);
 
   useEffect(() => {
@@ -81,10 +120,12 @@ function GroupChatContainer({ group, onBack }) {
   useEffect(() => {
     return () => {
       if (confirmRemoveTimerRef.current) clearTimeout(confirmRemoveTimerRef.current);
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     };
   }, []);
 
   const fetchMembers = useCallback(async () => {
+    if (!groupId || !accessToken) return;
     setIsMembersLoading(true);
     try {
       const res = await axios.get(`${API_BASE_URL}/groups/members/?group=${groupId}`, {
@@ -125,7 +166,30 @@ function GroupChatContainer({ group, onBack }) {
         fetchMembers();
       }
 
-      // ✅ آپدیت لحظه‌ای رأی‌گیری
+      if (data.type === "error") {
+        toast.error(data.message || "خطا در ارسال پیام");
+      }
+
+      // ✅ FIX: همگام‌سازی ویرایش/حذف که از سرور broadcast می‌شه (قبلاً اصلاً
+      // هندل نمی‌شد چون بک‌اند هم این اکشن‌ها رو نداشت).
+      if (data.type === "edit_message") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.messageId ? { ...m, text: data.newText, edited: true } : m
+          )
+        );
+      }
+
+      if (data.type === "delete_message") {
+        setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
+      }
+
+      // ✅ NEW: پین/آن‌پین که یه عضو دیگه‌ی گروه انجام داده
+      if (data.type === "pin_message") {
+        setPinnedMessageId(data.pinned ? data.messageId : null);
+      }
+
+      // ✅ NEW: آپدیت لحظه‌ای نتیجه‌ی رأی‌گیری
       if (data.type === "poll_update") {
         setMessages((prev) =>
           prev.map((m) => (m.id === data.messageId ? { ...m, meta: data.meta } : m))
@@ -143,6 +207,11 @@ function GroupChatContainer({ group, onBack }) {
   // دریافت پیام‌ها از API
   // -------------------------
   useEffect(() => {
+    if (!groupId || !accessToken) {
+      setIsMessagesLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
     const fetchMessages = async () => {
@@ -170,10 +239,13 @@ function GroupChatContainer({ group, onBack }) {
   }, [messages]);
 
   // -------------------------
-  // ارسال پیام (پیام معمولی/عکس/فایل/لوکیشن/مخاطب/نظرسنجی)
+  // ارسال پیام — payload کامل (متن/عکس/فایل/لوکیشن/مخاطب)
   // -------------------------
   const sendMessage = async (payload = {}) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("اتصال چت برقرار نیست، لطفاً صبر کن یا صفحه رو رفرش کن");
+      return;
+    }
 
     const finalText = payload.text !== undefined ? payload.text : textRef.current;
     const { image = null, file = null, fileName = null, messageType = "text", meta = null } = payload;
@@ -202,16 +274,157 @@ function GroupChatContainer({ group, onBack }) {
         file: fileData,
         fileName: resolvedFileName,
         meta,
+        // ⚠️ این فیلد رو فقط اگه بک‌اند توی سریالایزر/consumer قبولش کنه و
+        // موقع broadcast برگردونه، توی پیام‌های بعدی دیده می‌شه
+        replyTo: replyTarget
+          ? { id: replyTarget.id, text: replyTarget.text, senderName: replyTarget.senderName }
+          : null,
       })
     );
 
     setText("");
+    setReplyTarget(null);
   };
 
-  // ✅ رأی دادن به نظرسنجی گروه
+  // ✅ NEW: رأی دادن به نظرسنجی گروه
   const votePoll = (messageId, optionId) => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
     socketRef.current.send(JSON.stringify({ action: "vote_poll", messageId, optionId }));
+  };
+
+  // -------------------------
+  // ویرایش پیام (فقط نویسنده‌ی خودش) — واقعاً به سرور می‌فرسته
+  // -------------------------
+  const handleEditMessage = (messageId, newText) => {
+    const trimmed = (newText || "").trim();
+    if (!trimmed || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(
+      JSON.stringify({ action: "edit_message", messageId, newText: trimmed })
+    );
+  };
+
+  // -------------------------
+  // حذف پیام (فقط نویسنده‌ی خودش) — واقعاً به سرور می‌فرسته
+  // -------------------------
+  const handleDeleteMessage = (messageId) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({ action: "delete_message", messageId }));
+  };
+
+  // -------------------------
+  // ✅ NEW: کپی متن پیام
+  // -------------------------
+  const handleCopy = (msg) => {
+    if (!msg.text) return;
+    navigator.clipboard.writeText(msg.text).then(
+      () => toast.success("متن کپی شد"),
+      () => toast.error("کپی ممکن نشد")
+    );
+  };
+
+  // -------------------------
+  // ✅ NEW: استار (local — فقط تا رفرش بعدی می‌مونه)
+  // -------------------------
+  const toggleStar = (msg) => {
+    setStarredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msg.id)) next.delete(msg.id);
+      else next.add(msg.id);
+      return next;
+    });
+  };
+
+  // -------------------------
+  // ✅ پین (real-time بین اعضای گروه — تا رفرش بعدی می‌مونه، ذخیره دائم نمی‌شه)
+  // -------------------------
+  const togglePin = (msg) => {
+    const willBePinned = pinnedMessageId !== msg.id;
+    setPinnedMessageId(willBePinned ? msg.id : null);
+
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({ action: "pin_message", messageId: msg.id, pinned: willBePinned })
+      );
+    }
+  };
+
+  // -------------------------
+  // ✅ NEW: ترجمه با یه سرویس عمومی — ممکنه به‌خاطر rate-limit شکست بخوره،
+  // برای استفاده‌ی دائمی بهتره به یه API اختصاصی با کلید وصل بشه
+  // -------------------------
+  // -------------------------
+  // ✅ ترجمه با MyMemory (رایگان، بدون نیاز به API key) — جهت رو با
+  // تشخیص حروف فارسی خودکار تعیین می‌کنه
+  // -------------------------
+  const handleTranslate = async (msg) => {
+    if (!msg.text) return;
+    const loadingToast = toast.loading("در حال ترجمه...");
+    try {
+      const hasPersian = /[\u0600-\u06FF]/.test(msg.text);
+      const langpair = hasPersian ? "fa|en" : "en|fa";
+      const res = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(msg.text)}&langpair=${langpair}`
+      );
+      if (!res.ok) throw new Error("translate failed");
+      const data = await res.json();
+      const translated = data?.responseData?.translatedText;
+      if (!translated) throw new Error("empty translation");
+      toast.dismiss(loadingToast);
+      toast(
+        (t) => (
+          <div className="text-sm">
+            <p className="font-medium mb-1 text-cyan-400">ترجمه:</p>
+            <p className="text-slate-100">{translated}</p>
+          </div>
+        ),
+        { duration: 8000, style: { background: "#1e293b", color: "#fff", border: "1px solid #334155" } }
+      );
+    } catch (err) {
+      console.error("خطای ترجمه:", err);
+      toast.dismiss(loadingToast);
+      toast.error("ترجمه ممکن نشد — دوباره امتحان کن");
+    }
+  };
+
+  // -------------------------
+  // ✅ NEW: باز کردن منوی پیام — از کلیک ساده، کلیک راست، و long-press
+  // موبایل (contextmenu / تایمر تاچ) صدا زده می‌شه
+  // -------------------------
+  const openMessageMenu = (e, msg, senderName, isOwner) => {
+    e.preventDefault?.();
+    e.stopPropagation?.();
+    const clientX = e.clientX ?? 0;
+    const clientY = e.clientY ?? 0;
+    const position = {
+      top: Math.min(clientY, window.innerHeight - 340),
+      left: Math.min(clientX, window.innerWidth - 200),
+    };
+    setActiveMenuData((prev) => (prev?.msg.id === msg.id ? null : { msg, senderName, isOwner, position }));
+  };
+
+  const handleBubbleClick = (e, msg, senderName, isOwner) => {
+    // اگه همین حالا از long-press تاچ باز شده، این کلیکِ بعد از رهاکردن انگشت رو نادیده بگیر
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    openMessageMenu(e, msg, senderName, isOwner);
+  };
+
+  const handleTouchStart = (e, msg, senderName, isOwner) => {
+    longPressTriggeredRef.current = false;
+    const touch = e.touches[0];
+    if (!touch) return;
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      openMessageMenu({ clientX: touch.clientX, clientY: touch.clientY }, msg, senderName, isOwner);
+      if (navigator.vibrate) navigator.vibrate(15); // لرزش کوتاه مثل واتساب
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    clearTimeout(longPressTimerRef.current);
   };
 
   // -------------------------
@@ -238,6 +451,49 @@ function GroupChatContainer({ group, onBack }) {
       setEditedName(localGroup.name || "");
     }
   };
+
+  // -------------------------
+  // ✅ NEW: ویرایش توضیحات گروه (فقط ادمین) — همون الگوی اسم گروه
+  // -------------------------
+  useEffect(() => {
+    if (isEditingDescription && descriptionInputRef.current) descriptionInputRef.current.focus();
+  }, [isEditingDescription]);
+
+  const handleSaveDescription = async () => {
+    const trimmed = editedDescription.trim();
+    setIsEditingDescription(false);
+    if (trimmed === (localGroup.description || "")) return;
+
+    try {
+      const res = await axios.patch(
+        `${API_BASE_URL}/groups/groups/${groupId}/`,
+        { description: trimmed },
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      setLocalGroup((prev) => ({ ...prev, ...res.data }));
+    } catch (err) {
+      console.error("❌ خطا در تغییر توضیحات گروه:", err.response?.data || err);
+      setEditedDescription(localGroup.description || "");
+    }
+  };
+
+  // -------------------------
+  // ✅ NEW: شروع تماس صوتی/تصویری گروهی
+  // -------------------------
+  const canStartGroupCall = groupCallStatus === "idle";
+
+  const startGroupCallWithType = (type) => {
+    if (!canStartGroupCall) return;
+    connectCallSocket();
+    const myInfo = {
+      name: authUser?.name || authUser?.email || "کاربر",
+      image: authUser?.image || authUser?.profile || null,
+    };
+    startGroupCall({ id: groupId, name: localGroup.name }, myInfo, type);
+  };
+
+  const handleGroupAudioCall = () => startGroupCallWithType("audio");
+  const handleGroupVideoCall = () => startGroupCallWithType("video");
 
   const handleAvatarChange = async (e) => {
     const file = e.target.files[0];
@@ -344,7 +600,7 @@ function GroupChatContainer({ group, onBack }) {
   };
 
   // -------------------------
-  // رندر نظرسنجی
+  // ✅ NEW: رندر نظرسنجی (سؤال + گزینه‌ها با نوار درصد رأی)
   // -------------------------
   const renderPoll = (msg) => {
     const { question, options = [], multiple } = msg.meta || {};
@@ -362,7 +618,10 @@ function GroupChatContainer({ group, onBack }) {
             return (
               <button
                 key={opt.id}
-                onClick={() => votePoll(msg.id, opt.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  votePoll(msg.id, opt.id);
+                }}
                 className="w-full text-right relative overflow-hidden rounded-lg bg-black/20 hover:bg-black/30 transition-colors p-2"
               >
                 <div className="absolute inset-y-0 right-0 bg-cyan-400/20" style={{ width: `${percent}%` }} />
@@ -385,7 +644,7 @@ function GroupChatContainer({ group, onBack }) {
   };
 
   // -------------------------
-  // محتوای پیام بسته به نوعش
+  // محتوای پیام بسته به نوعش (لوکیشن/مخاطب/فایل/نظرسنجی)
   // -------------------------
   const renderMessageContent = (msg) => {
     const type = msg.messageType || msg.message_type || "text";
@@ -471,6 +730,38 @@ function GroupChatContainer({ group, onBack }) {
       </button>
 
       <div className="flex items-center gap-1">
+        {/* ✅ NEW: تماس صوتی گروهی — دقیقاً همون استایل چت خصوصی */}
+        <button
+          onClick={handleGroupAudioCall}
+          disabled={!canStartGroupCall}
+          className="group relative w-10 h-10 rounded-full flex items-center justify-center
+                     bg-cyan-500/10 text-cyan-400
+                     hover:bg-cyan-500/20 hover:shadow-[0_0_16px_rgba(34,211,238,0.35)]
+                     active:scale-90
+                     disabled:opacity-30 disabled:hover:bg-cyan-500/10 disabled:hover:shadow-none disabled:active:scale-100
+                     transition-all duration-200"
+          title="تماس صوتی گروهی"
+        >
+          <PhoneIcon className="w-[18px] h-[18px] transition-transform duration-200 group-hover:scale-110" />
+        </button>
+
+        {/* ✅ NEW: تماس تصویری گروهی */}
+        <button
+          onClick={handleGroupVideoCall}
+          disabled={!canStartGroupCall}
+          className="group relative w-10 h-10 rounded-full flex items-center justify-center
+                     bg-violet-500/10 text-violet-400
+                     hover:bg-violet-500/20 hover:shadow-[0_0_16px_rgba(167,139,250,0.35)]
+                     active:scale-90
+                     disabled:opacity-30 disabled:hover:bg-violet-500/10 disabled:hover:shadow-none disabled:active:scale-100
+                     transition-all duration-200"
+          title="تماس تصویری گروهی"
+        >
+          <VideoIcon className="w-[18px] h-[18px] transition-transform duration-200 group-hover:scale-110" />
+        </button>
+
+        <span className="w-px h-6 bg-slate-700/60 mx-1" />
+
         <button
           onClick={() => setShowInfoPanel(true)}
           className="p-2 text-slate-400 hover:text-slate-200 transition-colors"
@@ -486,7 +777,7 @@ function GroupChatContainer({ group, onBack }) {
   );
 
   // -------------------------
-  // پنل اطلاعات گروه / اعضا
+  // پنل اطلاعات گروه / اعضا (با وضعیت آنلاین)
   // -------------------------
   const GroupInfoPanel = () => {
     if (!showInfoPanel) return null;
@@ -552,8 +843,41 @@ function GroupChatContainer({ group, onBack }) {
                 </div>
               )}
 
-              {localGroup.description && (
-                <p className="text-slate-400 text-sm text-center">{localGroup.description}</p>
+              {/* ✅ NEW: توضیحات گروه حالا قابل ویرایشه (فقط ادمین) — دقیقاً الگوی اسم گروه */}
+              {isEditingDescription ? (
+                <textarea
+                  ref={descriptionInputRef}
+                  value={editedDescription}
+                  onChange={(e) => setEditedDescription(e.target.value)}
+                  onBlur={handleSaveDescription}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSaveDescription();
+                    }
+                  }}
+                  rows={2}
+                  placeholder="توضیحاتی برای گروه بنویس..."
+                  className="w-full bg-slate-900/60 border border-cyan-400/60 outline-none text-slate-300 text-sm text-center px-3 py-1.5 rounded-lg resize-none"
+                />
+              ) : isAdmin ? (
+                <div
+                  className="flex items-center gap-1.5 max-w-full px-2 cursor-pointer group/desc"
+                  onClick={() => setIsEditingDescription(true)}
+                >
+                  <p
+                    className={`text-sm text-center truncate ${
+                      localGroup.description ? "text-slate-400" : "text-slate-600 italic"
+                    }`}
+                  >
+                    {localGroup.description || "افزودن توضیحات..."}
+                  </p>
+                  <PencilIcon className="w-3.5 h-3.5 text-slate-500 opacity-0 group-hover/desc:opacity-100 transition-opacity flex-shrink-0" />
+                </div>
+              ) : (
+                localGroup.description && (
+                  <p className="text-slate-400 text-sm text-center">{localGroup.description}</p>
+                )
               )}
             </div>
 
@@ -575,25 +899,34 @@ function GroupChatContainer({ group, onBack }) {
                 {members.map((m) => {
                   const isOwnerRow = m.user === localGroup.owner?.id;
                   const isConfirmingRemove = confirmRemoveId === m.id;
+                  const isOnline = onlineUsers.includes(String(m.user));
 
                   return (
                     <div
                       key={m.id}
                       className="group/member flex items-center gap-3 p-2 rounded-lg hover:bg-slate-700/40 transition-colors"
                     >
-                      <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
+                      <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
                         <img
                           src={resolveMemberAvatar(m.user_detail?.image)}
                           alt={m.user_detail?.name}
                           className="w-full h-full object-cover"
                           onError={(e) => (e.target.src = "/avatar.png")}
                         />
+                        {isOnline && (
+                          <span
+                            className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-800"
+                            title="آنلاین"
+                          />
+                        )}
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="text-slate-200 text-sm truncate">
                           {m.user_detail?.name || m.user_detail?.email}
                         </span>
-                        <span className="text-slate-500 text-xs truncate">{m.user_detail?.email}</span>
+                        <span className={`text-xs truncate ${isOnline ? "text-green-400" : "text-slate-500"}`}>
+                          {isOnline ? "آنلاین" : m.user_detail?.email}
+                        </span>
                       </div>
 
                       {m.role === "admin" && (
@@ -722,11 +1055,15 @@ function GroupChatContainer({ group, onBack }) {
   // -------------------------
   // Render
   // -------------------------
+  // ✅ FIX: چک نهایی بعد از تمام هوک‌ها
+  if (!groupId) return null;
+
   return (
     <div className="flex flex-col h-full">
       <GroupChatHeader />
       <GroupInfoPanel />
       <AddMemberModal />
+      <GroupCallModal />
 
       <div className="flex-1 px-6 overflow-y-auto py-8">
         {isMessagesLoading ? (
@@ -735,22 +1072,68 @@ function GroupChatContainer({ group, onBack }) {
           <NoChatHistoryPlaceholder name={localGroup.name} onQuickReply={(msg) => setText(msg)} />
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
+            {/* ✅ NEW: نوار پیام پین‌شده (local — تا رفرش بعدی) */}
+            {pinnedMessageId &&
+              (() => {
+                const pinnedMsg = messages.find((m) => m.id === pinnedMessageId);
+                if (!pinnedMsg) return null;
+                return (
+                  <div className="flex items-center gap-2 bg-slate-800/70 border border-cyan-500/30 rounded-lg px-3 py-2">
+                    <Pin className="w-4 h-4 text-cyan-400 flex-shrink-0 fill-cyan-400" />
+                    <p className="text-slate-300 text-xs truncate flex-1">
+                      {pinnedMsg.text || "پیام پین‌شده"}
+                    </p>
+                    <button
+                      onClick={() => setPinnedMessageId(null)}
+                      className="text-slate-500 hover:text-slate-300 flex-shrink-0"
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })()}
+
             {messages.map((msg) => {
-              const isOwner = msg.sender?.id === authUser?.id || msg.author?.id === authUser?.id;
+              // ✅ مقاوم در برابر sender/author چه آبجکت باشه چه عدد خام
+              const rawSenderId = msg.sender?.id ?? msg.sender ?? msg.author?.id ?? msg.author;
+              const isOwner =
+                rawSenderId !== undefined &&
+                rawSenderId !== null &&
+                String(rawSenderId) === String(authUser?.id ?? "");
               const senderInfo = msg.sender || msg.author;
-              const messageType = msg.messageType || msg.message_type || "text";
               const specialContent = renderMessageContent(msg);
 
               return (
                 <div key={msg.id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
                   <div
-                    className={`chat-bubble relative ${isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"}`}
-                    onClick={() =>
-                      isOwner && messageType !== "poll" && setActiveMenu(activeMenu === msg.id ? null : msg.id)
-                    }
+                    className={`chat-bubble relative select-none ${
+                      isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"
+                    }`}
+                    style={{ touchAction: "manipulation" }}
+                    onClick={(e) => {
+                      if (msg.messageType === "poll") return;
+                      handleBubbleClick(e, msg, senderInfo?.name || senderInfo?.email || "", isOwner);
+                    }}
+                    onContextMenu={(e) => {
+                      if (msg.messageType === "poll") return;
+                      openMessageMenu(e, msg, senderInfo?.name || senderInfo?.email || "", isOwner);
+                    }}
+                    onTouchStart={(e) => {
+                      if (msg.messageType === "poll") return;
+                      handleTouchStart(e, msg, senderInfo?.name || senderInfo?.email || "", isOwner);
+                    }}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
                   >
                     {!isOwner && (
                       <p className="text-xs text-cyan-300 mb-1">{senderInfo?.name || senderInfo?.email}</p>
+                    )}
+
+                    {msg.replyTo && (
+                      <div className="mb-1.5 border-r-2 border-cyan-300/60 bg-black/15 rounded px-2 py-1">
+                        <p className="text-[11px] text-cyan-200 font-medium">{msg.replyTo.senderName || "پیام"}</p>
+                        <p className="text-[11px] opacity-80 truncate max-w-[220px]">{msg.replyTo.text}</p>
+                      </div>
                     )}
 
                     {msg.image && (
@@ -759,7 +1142,10 @@ function GroupChatContainer({ group, onBack }) {
                           src={resolveUrl(msg.image)}
                           alt="Shared"
                           className="rounded-lg max-h-64 object-contain cursor-pointer hover:opacity-90 transition"
-                          onClick={() => window.open(resolveUrl(msg.image), "_blank")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(resolveUrl(msg.image), "_blank");
+                          }}
                         />
                       </div>
                     )}
@@ -768,34 +1154,15 @@ function GroupChatContainer({ group, onBack }) {
 
                     {msg.text && <p className="whitespace-pre-wrap break-words mt-1">{msg.text}</p>}
 
-                    <p className="text-xs opacity-70 mt-1">
+                    <p className="text-xs opacity-70 mt-1 flex items-center gap-1 justify-end">
+                      {starredIds.has(msg.id) && (
+                        <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 flex-shrink-0" />
+                      )}
                       {new Date(msg.created_at || msg.created_date).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
                     </p>
-
-                    {isOwner && activeMenu === msg.id && (
-                      <div className="absolute top-0 right-0 bg-slate-700 rounded shadow z-10 flex flex-col">
-                        {msg.text && (
-                          <button
-                            className="px-3 py-1 text-xs text-cyan-200 hover:bg-slate-600"
-                            onClick={() => {
-                              setText(msg.text);
-                              setActiveMenu(null);
-                            }}
-                          >
-                            ویرایش
-                          </button>
-                        )}
-                        <button
-                          className="px-3 py-1 text-xs text-red-400 hover:bg-slate-600"
-                          onClick={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
-                        >
-                          حذف
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
               );
@@ -805,7 +1172,69 @@ function GroupChatContainer({ group, onBack }) {
         )}
       </div>
 
-      <MessageInput text={text} setText={setText} sendMessage={sendMessage} />
+      <MessageInput
+        text={text}
+        setText={setText}
+        editingMessageId={editingMessageId}
+        editingText={editingText}
+        setEditingMessageId={setEditingMessageId}
+        setEditingText={setEditingText}
+        sendMessage={sendMessage}
+        editMessage={handleEditMessage}
+        replyTarget={replyTarget}
+        onCancelReply={() => setReplyTarget(null)}
+      />
+
+      {/* ✅ NEW: منوی کامل پیام + مودال‌های فوروارد و اطلاعات */}
+      <MessageContextMenu
+        isOpen={!!activeMenuData}
+        onClose={() => setActiveMenuData(null)}
+        position={activeMenuData?.position}
+        isOwner={activeMenuData?.isOwner}
+        hasText={!!activeMenuData?.msg?.text?.trim()}
+        isStarred={activeMenuData ? starredIds.has(activeMenuData.msg.id) : false}
+        isPinned={activeMenuData ? pinnedMessageId === activeMenuData.msg.id : false}
+        onReply={() =>
+          setReplyTarget({
+            id: activeMenuData.msg.id,
+            text:
+              activeMenuData.msg.text ||
+              (activeMenuData.msg.image
+                ? "عکس"
+                : activeMenuData.msg.file
+                ? activeMenuData.msg.fileName || "فایل"
+                : ""),
+            senderName: activeMenuData.senderName,
+          })
+        }
+        onForward={() => setForwardMessage(activeMenuData.msg)}
+        onCopy={activeMenuData?.msg?.text ? () => handleCopy(activeMenuData.msg) : undefined}
+        onToggleStar={() => toggleStar(activeMenuData.msg)}
+        onTogglePin={() => togglePin(activeMenuData.msg)}
+        onTranslate={activeMenuData?.msg?.text ? () => handleTranslate(activeMenuData.msg) : undefined}
+        onInfo={() => setInfoMessageData({ msg: activeMenuData.msg, senderName: activeMenuData.senderName })}
+        onEdit={
+          activeMenuData?.isOwner && activeMenuData?.msg?.text
+            ? () => {
+                setEditingMessageId(activeMenuData.msg.id);
+                setEditingText(activeMenuData.msg.text);
+              }
+            : undefined
+        }
+        onDelete={activeMenuData?.isOwner ? () => handleDeleteMessage(activeMenuData.msg.id) : undefined}
+      />
+
+      <ForwardMessageModal
+        isOpen={!!forwardMessage}
+        onClose={() => setForwardMessage(null)}
+        message={forwardMessage}
+      />
+
+      <MessageInfoModal
+        isOpen={!!infoMessageData}
+        onClose={() => setInfoMessageData(null)}
+        data={infoMessageData}
+      />
     </div>
   );
 }

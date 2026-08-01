@@ -39,6 +39,8 @@ export const useChatStore = create((set, get) => ({
     onlineUsers: [],
     searchResults: [],
     isSearching: false,
+    // ✅ NEW: پیام پین‌شده‌ی مکالمه‌ی خصوصی باز — بین دو طرف از طریق سوکت سینک می‌شه
+    pinnedMessageId: null,
 
     // ---------------- 🌐 اتصال مرکزی وضعیت آنلاین ----------------
     connectOnlineStatusSocket: () => {
@@ -174,7 +176,7 @@ export const useChatStore = create((set, get) => ({
         user.name = user.name || `Contact ${user.raw?.contact || user._id}`;
         user.email = user.email || null;
 
-        set({selectedUser: user, selectedGroup: null, messages: []});
+        set({selectedUser: user, selectedGroup: null, messages: [], pinnedMessageId: null});
 
         get().getMessagesByUserId();
         get().subscribeToMessages(userId);
@@ -318,6 +320,8 @@ export const useChatStore = create((set, get) => ({
                 fileName: msg.file_name || msg.fileName || null,
                 messageType: msg.message_type || msg.messageType || "text",
                 meta: msg.meta || null,
+                // ✅ NEW: اگه بک‌اند این فیلد رو برگردونه، پیش‌نمایش ریپلای بعد از رفرش هم می‌مونه
+                replyTo: msg.replyTo || msg.reply_to || null,
                 createdAt: safeDate(msg.created_date || msg.createdAt),
                 isOptimistic: false,
             }));
@@ -329,6 +333,8 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    // ✅ sendMessage حالا یه payload کامل قبول می‌کنه:
+    // { text, image (File|base64|null), file (File|base64|null), fileName, messageType, meta, replyTo }
     sendMessage: async (payload = {}) => {
         const {selectedUser, messages, socket} = get();
         const {authUser} = useAuthStore.getState();
@@ -338,7 +344,16 @@ export const useChatStore = create((set, get) => ({
         const receiverId = selectedUser._id;
         const tempId = `temp-${Date.now()}`;
 
-        const {text = "", image = null, file = null, fileName = null, messageType = "text", meta = null} = payload;
+        const {
+            text = "",
+            image = null,
+            file = null,
+            fileName = null,
+            messageType = "text",
+            meta = null,
+            // ✅ NEW: { id, text, senderName } — از منوی «ریپلای» پیام می‌آد
+            replyTo = null,
+        } = payload;
 
         let imageData = null;
         if (image instanceof File) {
@@ -366,6 +381,7 @@ export const useChatStore = create((set, get) => ({
             fileName: resolvedFileName,
             messageType,
             meta,
+            replyTo,
             createdAt: safeDate(),
             isOptimistic: true,
         };
@@ -386,17 +402,11 @@ export const useChatStore = create((set, get) => ({
                         fileName: resolvedFileName,
                         messageType,
                         meta,
+                        replyTo,
                     },
                 })
             );
         }
-    },
-
-    // ✅ رأی دادن به نظرسنجی (چت خصوصی)
-    votePoll: (messageId, optionId) => {
-        const {socket} = get();
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        socket.send(JSON.stringify({type: "vote_poll", messageId, optionId}));
     },
 
     // ---------------- 🧠 WebSocket چت (فقط برای مکالمه‌ی باز) ----------------
@@ -435,7 +445,13 @@ export const useChatStore = create((set, get) => ({
                     return;
                 }
 
-                // ✅ آپدیت لحظه‌ای نتیجه‌ی رأی‌گیری
+                // ✅ NEW: پین/آن‌پین که طرف مقابل (یا خودت از تب دیگه) انجام داده
+                if (data.type === "pin_message") {
+                    set({pinnedMessageId: data.pinned ? data.messageId : null});
+                    return;
+                }
+
+                // ✅ NEW: آپدیت لحظه‌ای نتیجه‌ی رأی‌گیری
                 if (data.type === "poll_update") {
                     const {messageId, meta} = data;
                     set((state) => ({
@@ -455,6 +471,11 @@ export const useChatStore = create((set, get) => ({
                             _id: msg.id || msg._id || msg.tempId,
                             messageType: msg.messageType || msg.message_type || "text",
                             fileName: msg.fileName || msg.file_name || null,
+                            // ✅ NEW: اگه سرور همون replyTo که فرستادیم رو برگردونه، اینجا حفظ می‌شه
+                            // ✅ FIX: اگه بک‌اند replyTo رو echo نکنه، از نسخه‌ی optimistic محلی
+                            // (که قبلاً همین پیام رو با replyTo داشتیم) استفاده کن تا حداقل
+                            // برای خودِ فرستنده پاک نشه
+                            replyTo: msg.replyTo || msg.reply_to || exists?.replyTo || null,
                             createdAt: safeDate(msg.createdAt || msg.created_date),
                             isOptimistic: false,
                         };
@@ -509,6 +530,25 @@ export const useChatStore = create((set, get) => ({
             socket.close();
             set({socket: null});
         }
+    },
+
+    // ✅ NEW: پین/آن‌پین — هم محلی آپدیت می‌کنه (سریع)، هم به سرور می‌فرسته
+    // تا طرف مقابل هم همون لحظه ببینه (فقط real-time، تو رفرش پاک می‌شه)
+    togglePinMessage: (messageId) => {
+        const {socket, pinnedMessageId} = get();
+        const willBePinned = pinnedMessageId !== messageId;
+        set({pinnedMessageId: willBePinned ? messageId : null});
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({type: "pin_message", messageId, pinned: willBePinned}));
+        }
+    },
+
+    // ✅ NEW: رأی دادن به نظرسنجی (چت خصوصی)
+    votePoll: (messageId, optionId) => {
+        const {socket} = get();
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({type: "vote_poll", messageId, optionId}));
     },
 
     editMessage: (messageId, newText) => {

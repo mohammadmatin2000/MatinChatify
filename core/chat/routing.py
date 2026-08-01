@@ -1,6 +1,6 @@
 # chat/routing.py
 from django.urls import re_path
-from .consumers import ChatConsumer, OnlineStatusConsumer,CallSignalingConsumer
+from .consumers import ChatConsumer, OnlineStatusConsumer
 
 websocket_urlpatterns = [
     # WebSocket برای پیام‌های خصوصی (چت)
@@ -9,5 +9,4 @@ websocket_urlpatterns = [
     # WebSocket برای وضعیت آنلاین کاربران (کانتکت لیست)
     re_path(r'ws/online-status/$', OnlineStatusConsumer.as_asgi()),
 
-    re_path(r"ws/call/$", CallSignalingConsumer.as_asgi()),
 ]

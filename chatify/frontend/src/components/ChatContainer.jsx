@@ -5,7 +5,11 @@ import ChatHeader from "./ChatHeader";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import MessageInput from "./MessageInput";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
-import { FileTextIcon, MapPinIcon, DownloadIcon, CheckIcon } from "lucide-react";
+import MessageContextMenu from "./MessageContextMenu";
+import MessageInfoModal from "./MessageInfoModal";
+import ForwardMessageModal from "./ForwardMessageModal";
+import toast from "react-hot-toast";
+import { FileTextIcon, MapPinIcon, UserIcon, DownloadIcon, XIcon, Pin, Star, CheckIcon } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000";
 
@@ -19,18 +23,33 @@ function ChatContainer() {
     isMessagesLoading,
     subscribeToMessages,
     unsubscribeFromMessages,
+    sendMessage: storeSendMessage,
     editMessage,
     deleteMessage,
+    pinnedMessageId,
+    togglePinMessage,
     votePoll,
   } = useChatStore();
 
   const { authUser } = useAuthStore();
   const messageEndRef = useRef(null);
 
-  const [activeMenu, setActiveMenu] = useState(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingText, setEditingText] = useState("");
   const [text, setText] = useState("");
+
+  // ✅ NEW: منوی کامل پیام (ریپلای/فوروارد/کپی/استار/پین/اطلاعات/ترجمه/ادیت/دیلیت)
+  const [activeMenuData, setActiveMenuData] = useState(null); // { msg, senderName, isOwner, position }
+  const [replyTarget, setReplyTarget] = useState(null); // { id, text, senderName }
+  // ⚠️ استار و پین فعلاً فقط local هستن (با رفرش پاک می‌شن) چون بک‌اند
+  // فیلدی براشون نداره
+  const [starredIds, setStarredIds] = useState(new Set());
+  const [forwardMessage, setForwardMessage] = useState(null);
+  const [infoMessageData, setInfoMessageData] = useState(null);
+
+  // ✅ NEW: برای long-press واقعی روی موبایل
+  const longPressTimerRef = useRef(null);
+  const longPressTriggeredRef = useRef(false);
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -45,7 +64,126 @@ function ChatContainer() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    };
+  }, []);
+
   if (!selectedUser) return null;
+
+  // -------------------------
+  // ✅ NEW: ارسال پیام + تزریق replyTo (اگه در حال ریپلای بودیم)
+  // -------------------------
+  const handleSendMessage = async (payload) => {
+    await storeSendMessage({
+      ...payload,
+      replyTo: replyTarget
+        ? { id: replyTarget.id, text: replyTarget.text, senderName: replyTarget.senderName }
+        : null,
+    });
+    setReplyTarget(null);
+  };
+
+  // -------------------------
+  // ✅ NEW: کپی متن پیام
+  // -------------------------
+  const handleCopy = (msg) => {
+    if (!msg.text) return;
+    navigator.clipboard.writeText(msg.text).then(
+      () => toast.success("متن کپی شد"),
+      () => toast.error("کپی ممکن نشد")
+    );
+  };
+
+  // -------------------------
+  // ✅ NEW: استار (local — فقط تا رفرش بعدی می‌مونه)
+  // -------------------------
+  const toggleStar = (msg) => {
+    setStarredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msg._id)) next.delete(msg._id);
+      else next.add(msg._id);
+      return next;
+    });
+  };
+
+  // -------------------------
+  // ✅ NEW: ترجمه با یه سرویس عمومی — ممکنه به‌خاطر rate-limit شکست بخوره
+  // -------------------------
+  // -------------------------
+  // ✅ ترجمه با MyMemory (رایگان، بدون نیاز به API key) — جهت رو با
+  // تشخیص حروف فارسی خودکار تعیین می‌کنه
+  // -------------------------
+  const handleTranslate = async (msg) => {
+    if (!msg.text) return;
+    const loadingToast = toast.loading("در حال ترجمه...");
+    try {
+      const hasPersian = /[\u0600-\u06FF]/.test(msg.text);
+      const langpair = hasPersian ? "fa|en" : "en|fa";
+      const res = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(msg.text)}&langpair=${langpair}`
+      );
+      if (!res.ok) throw new Error("translate failed");
+      const data = await res.json();
+      const translated = data?.responseData?.translatedText;
+      if (!translated) throw new Error("empty translation");
+      toast.dismiss(loadingToast);
+      toast(
+        (t) => (
+          <div className="text-sm">
+            <p className="font-medium mb-1 text-cyan-400">ترجمه:</p>
+            <p className="text-slate-100">{translated}</p>
+          </div>
+        ),
+        { duration: 8000, style: { background: "#1e293b", color: "#fff", border: "1px solid #334155" } }
+      );
+    } catch (err) {
+      console.error("خطای ترجمه:", err);
+      toast.dismiss(loadingToast);
+      toast.error("ترجمه ممکن نشد — دوباره امتحان کن");
+    }
+  };
+
+  // -------------------------
+  // ✅ NEW: باز کردن منوی پیام — از کلیک ساده، کلیک راست، و long-press
+  // موبایل (contextmenu / تایمر تاچ) صدا زده می‌شه
+  // -------------------------
+  const openMessageMenu = (e, msg, senderName, isOwner) => {
+    e.preventDefault?.();
+    e.stopPropagation?.();
+    const clientX = e.clientX ?? 0;
+    const clientY = e.clientY ?? 0;
+    const position = {
+      top: Math.min(clientY, window.innerHeight - 340),
+      left: Math.min(clientX, window.innerWidth - 200),
+    };
+    setActiveMenuData((prev) => (prev?.msg._id === msg._id ? null : { msg, senderName, isOwner, position }));
+  };
+
+  const handleBubbleClick = (e, msg, senderName, isOwner) => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    openMessageMenu(e, msg, senderName, isOwner);
+  };
+
+  const handleTouchStart = (e, msg, senderName, isOwner) => {
+    longPressTriggeredRef.current = false;
+    const touch = e.touches[0];
+    if (!touch) return;
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      openMessageMenu({ clientX: touch.clientX, clientY: touch.clientY }, msg, senderName, isOwner);
+      if (navigator.vibrate) navigator.vibrate(15);
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    clearTimeout(longPressTimerRef.current);
+  };
 
   // ✅ رندر نظرسنجی (سؤال + گزینه‌ها با نوار درصد رأی)
   const renderPoll = (msg) => {
@@ -64,13 +202,13 @@ function ChatContainer() {
             return (
               <button
                 key={opt.id}
-                onClick={() => votePoll(msg._id, opt.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  votePoll(msg._id, opt.id);
+                }}
                 className="w-full text-right relative overflow-hidden rounded-lg bg-black/20 hover:bg-black/30 transition-colors p-2"
               >
-                <div
-                  className="absolute inset-y-0 right-0 bg-cyan-400/20"
-                  style={{ width: `${percent}%` }}
-                />
+                <div className="absolute inset-y-0 right-0 bg-cyan-400/20" style={{ width: `${percent}%` }} />
                 <div className="relative flex items-center justify-between gap-2">
                   <span className="text-sm flex items-center gap-1.5">
                     {hasVoted && <CheckIcon className="w-3.5 h-3.5 text-cyan-300" />}
@@ -89,6 +227,7 @@ function ChatContainer() {
     );
   };
 
+  // ✅ محتوای پیام بسته به نوعش
   const renderMessageContent = (msg) => {
     const type = msg.messageType || "text";
 
@@ -167,6 +306,25 @@ function ChatContainer() {
           />
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
+            {/* ✅ NEW: نوار پیام پین‌شده (local — تا رفرش بعدی) */}
+            {pinnedMessageId &&
+              (() => {
+                const pinnedMsg = messages.find((m) => m._id === pinnedMessageId);
+                if (!pinnedMsg) return null;
+                return (
+                  <div className="flex items-center gap-2 bg-slate-800/70 border border-cyan-500/30 rounded-lg px-3 py-2">
+                    <Pin className="w-4 h-4 text-cyan-400 flex-shrink-0 fill-cyan-400" />
+                    <p className="text-slate-300 text-xs truncate flex-1">{pinnedMsg.text || "پیام پین‌شده"}</p>
+                    <button
+                      onClick={() => togglePinMessage(pinnedMsg._id)}
+                      className="text-slate-500 hover:text-slate-300 flex-shrink-0"
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })()}
+
             {messages.map((msg) => {
               if (msg.senderId === null) {
                 return (
@@ -178,19 +336,37 @@ function ChatContainer() {
 
               const isOwner = String(msg.senderId) === String(authUser?.id);
               const specialContent = renderMessageContent(msg);
+              const senderName = isOwner ? authUser?.name || "شما" : selectedUser?.name;
 
               return (
                 <div key={msg._id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
                   <div
-                    className={`chat-bubble relative ${
+                    className={`chat-bubble relative select-none ${
                       isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"
                     }`}
-                    onClick={() =>
-                      isOwner &&
-                      msg.messageType !== "poll" &&
-                      setActiveMenu(activeMenu === msg._id ? null : msg._id)
-                    }
+                    style={{ touchAction: "manipulation" }}
+                    onClick={(e) => {
+                      if (msg.messageType === "poll") return;
+                      handleBubbleClick(e, msg, senderName, isOwner);
+                    }}
+                    onContextMenu={(e) => {
+                      if (msg.messageType === "poll") return;
+                      openMessageMenu(e, msg, senderName, isOwner);
+                    }}
+                    onTouchStart={(e) => {
+                      if (msg.messageType === "poll") return;
+                      handleTouchStart(e, msg, senderName, isOwner);
+                    }}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
                   >
+                    {msg.replyTo && (
+                      <div className="mb-1.5 border-r-2 border-cyan-300/60 bg-black/15 rounded px-2 py-1">
+                        <p className="text-[11px] text-cyan-200 font-medium">{msg.replyTo.senderName || "پیام"}</p>
+                        <p className="text-[11px] opacity-80 truncate max-w-[220px]">{msg.replyTo.text}</p>
+                      </div>
+                    )}
+
                     {msg.image && (
                       <div className="mt-1">
                         <img
@@ -203,51 +379,29 @@ function ChatContainer() {
                           }
                           alt="Shared"
                           className="rounded-lg max-h-64 object-contain cursor-pointer hover:opacity-90 transition"
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.stopPropagation();
                             window.open(
                               msg.image.startsWith("http") ? msg.image : `${API_BASE_URL}${msg.image}`,
                               "_blank"
-                            )
-                          }
+                            );
+                          }}
                         />
                       </div>
                     )}
 
                     {specialContent && <div className="mt-1">{specialContent}</div>}
 
-                    {msg.text && (
-                      <p className="mt-2 whitespace-pre-wrap break-words">{msg.text}</p>
-                    )}
+                    {msg.text && <p className="mt-2 whitespace-pre-wrap break-words">{msg.text}</p>}
 
-                    <p className="text-xs mt-1 opacity-75 flex items-center gap-1">
+                    <p className="text-xs mt-1 opacity-75 flex items-center gap-1 justify-end">
+                      {starredIds.has(msg._id) && (
+                        <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 flex-shrink-0" />
+                      )}
                       {msg.createdAt instanceof Date
                         ? msg.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                         : "🕒"}
                     </p>
-
-                    {isOwner && activeMenu === msg._id && (
-                      <div className="absolute top-0 right-0 bg-slate-700 rounded-md shadow-lg z-10 flex flex-col">
-                        {msg.text && (
-                          <button
-                            className="px-3 py-1 text-xs text-cyan-200 hover:bg-slate-600 hover:text-cyan-400 rounded-t-md"
-                            onClick={() => {
-                              setEditingMessageId(msg._id);
-                              setEditingText(msg.text);
-                              setActiveMenu(null);
-                              setText(msg.text);
-                            }}
-                          >
-                            ویرایش
-                          </button>
-                        )}
-                        <button
-                          className="px-3 py-1 text-xs text-red-400 hover:bg-slate-600 hover:text-red-600 rounded-b-md"
-                          onClick={() => deleteMessage(msg._id)}
-                        >
-                          حذف
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
               );
@@ -264,7 +418,58 @@ function ChatContainer() {
         editingText={editingText}
         setEditingMessageId={setEditingMessageId}
         setEditingText={setEditingText}
+        sendMessage={handleSendMessage}
+        replyTarget={replyTarget}
+        onCancelReply={() => setReplyTarget(null)}
       />
+
+      {/* ✅ NEW: منوی کامل پیام + مودال‌های فوروارد و اطلاعات */}
+      <MessageContextMenu
+        isOpen={!!activeMenuData}
+        onClose={() => setActiveMenuData(null)}
+        position={activeMenuData?.position}
+        isOwner={activeMenuData?.isOwner}
+        hasText={!!activeMenuData?.msg?.text?.trim()}
+        isStarred={activeMenuData ? starredIds.has(activeMenuData.msg._id) : false}
+        isPinned={activeMenuData ? pinnedMessageId === activeMenuData.msg._id : false}
+        onReply={() =>
+          setReplyTarget({
+            id: activeMenuData.msg._id,
+            text:
+              activeMenuData.msg.text ||
+              (activeMenuData.msg.image
+                ? "عکس"
+                : activeMenuData.msg.file
+                ? activeMenuData.msg.fileName || "فایل"
+                : ""),
+            senderName: activeMenuData.senderName,
+          })
+        }
+        onForward={() => setForwardMessage(activeMenuData.msg)}
+        onCopy={activeMenuData?.msg?.text ? () => handleCopy(activeMenuData.msg) : undefined}
+        onToggleStar={() => toggleStar(activeMenuData.msg)}
+        onTogglePin={() => togglePinMessage(activeMenuData.msg._id)}
+        onTranslate={activeMenuData?.msg?.text ? () => handleTranslate(activeMenuData.msg) : undefined}
+        onInfo={() => setInfoMessageData({ msg: activeMenuData.msg, senderName: activeMenuData.senderName })}
+        onEdit={
+          activeMenuData?.isOwner && activeMenuData?.msg?.text
+            ? () => {
+                setEditingMessageId(activeMenuData.msg._id);
+                setEditingText(activeMenuData.msg.text);
+                setText(activeMenuData.msg.text);
+              }
+            : undefined
+        }
+        onDelete={activeMenuData?.isOwner ? () => deleteMessage(activeMenuData.msg._id) : undefined}
+      />
+
+      <ForwardMessageModal
+        isOpen={!!forwardMessage}
+        onClose={() => setForwardMessage(null)}
+        message={forwardMessage}
+      />
+
+      <MessageInfoModal isOpen={!!infoMessageData} onClose={() => setInfoMessageData(null)} data={infoMessageData} />
     </>
   );
 }

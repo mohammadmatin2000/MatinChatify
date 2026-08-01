@@ -57,6 +57,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_edit_message(data)
             elif msg_type == "delete_message":
                 await self.handle_delete_message(data)
+            # ✅ NEW: پین/آن‌پین — فعلاً فقط real-time broadcast می‌شه، توی
+            # دیتابیس ذخیره نمی‌شه (چون مدل فیلد pinned نداره)
+            elif msg_type == "pin_message":
+                await self.handle_pin_message(data)
+            # ✅ NEW: رأی دادن به نظرسنجی
             elif msg_type == "vote_poll":
                 await self.handle_vote_poll(data)
             else:
@@ -76,6 +81,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         file_name = msg.get("fileName")
         message_type = msg.get("messageType", "text")
         meta = msg.get("meta")
+        # ✅ NEW: { id, text, senderName } — فعلاً فقط pass-through می‌شه،
+        # توی دیتابیس ذخیره نمی‌شه (چون مدل فیلد reply_to نداره)
+        reply_to = msg.get("replyTo")
 
         if not text and not image_base64 and not file_base64 and not meta:
             await self.send(json.dumps({"error": "Empty message"}))
@@ -99,7 +107,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             except Exception as e:
                 print("⚠️ File decode error:", e)
 
-        # ✅ برای پیام‌های poll، به هر آپشن یه id بده و لیست voters خالی بساز
+        # ✅ NEW: برای پیام‌های poll، به هر آپشن یه id بده و لیست voters خالی بساز
         if message_type == "poll" and meta and "options" in meta:
             meta = {
                 "question": meta.get("question", ""),
@@ -110,6 +118,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 ],
             }
 
+        # ذخیره در دیتابیس
         saved = await sync_to_async(MessageModels.objects.create)(
             sender_id=sender_id,
             receiver_id=receiver_id,
@@ -132,6 +141,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "fileName": saved.file_name,
             "messageType": saved.message_type,
             "meta": saved.meta,
+            # ✅ NEW: از payload کلاینت گرفته می‌شه، نه از دیتابیس
+            "replyTo": reply_to,
             "createdAt": str(saved.created_date),
         }
 
@@ -215,7 +226,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "messageId": event["messageId"]
         }))
 
-    # -------------------- ✅ رأی دادن به نظرسنجی --------------------
+    # -------------------- ✅ NEW: پین/آن‌پین پیام (فقط real-time، ذخیره نمی‌شه) --------------------
+    async def handle_pin_message(self, data):
+        message_id = data.get("messageId")
+        pinned = data.get("pinned", True)
+        if not message_id:
+            return
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {"type": "pin_message_broadcast", "messageId": message_id, "pinned": pinned}
+        )
+        print(f"📌 Pin toggled: {message_id} -> {pinned}")
+
+    async def pin_message_broadcast(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "pin_message",
+            "messageId": event["messageId"],
+            "pinned": event["pinned"],
+        }))
+
+    # -------------------- ✅ NEW: رأی دادن به نظرسنجی --------------------
     async def handle_vote_poll(self, data):
         message_id = data.get("messageId")
         option_id = data.get("optionId")
@@ -239,7 +270,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         already_voted = uid in target_option.get("voters", [])
 
         if not multiple:
-            # حالت تک‌انتخابی: از همه‌ی آپشن‌ها رأی این کاربر رو پاک کن
             for o in options:
                 if uid in o.get("voters", []):
                     o["voters"].remove(uid)
@@ -359,50 +389,4 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
                 f"user_{uid}",
                 {"type": "presence_update", "userId": self.user_id, "online": online},
             )
-# ======================================================================================================================
-# مدیریت سیگنالینگ تماس صوتی/تصویری (WebRTC) - فقط پیام‌ها رو رله می‌کنه، خود صدا/تصویر از اینجا رد نمی‌شه
-class CallSignalingConsumer(AsyncWebsocketConsumer):
-
-    async def connect(self):
-        self.user = self.scope["user"]
-        self.user_id = self.user.id if self.user.is_authenticated else None
-
-        if not self.user_id:
-            await self.close()
-            return
-
-        # هر کاربر یه گروه شخصی داره تا بشه مستقیم پیام رو براش فرستاد
-        self.group_name = f"call_{self.user_id}"
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
-
-        print(f"📞 اتصال سیگنالینگ تماس برقرار شد: user_id={self.user_id}")
-
-    async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
-        print(f"📞 اتصال سیگنالینگ تماس قطع شد: user_id={self.user_id}")
-
-    async def receive(self, text_data=None):
-        try:
-            data = json.loads(text_data)
-            msg_type = data.get("type")
-            target_id = data.get("targetId")
-
-            if not target_id:
-                return
-
-            # پیام رو مستقیم به کاربر مقصد رله می‌کنیم
-            await self.channel_layer.group_send(
-                f"call_{target_id}",
-                {
-                    "type": "call_signal_relay",
-                    "payload": {**data, "fromId": self.user_id},
-                }
-            )
-        except Exception as e:
-            print("❌ خطا در سیگنالینگ تماس:", e)
-
-    # این متد وقتی صدا زده می‌شه که یه پیام از یه کاربر دیگه به این کاربر رله شده
-    async def call_signal_relay(self, event):
-        await self.send(text_data=json.dumps(event["payload"]))
 # ======================================================================================================================

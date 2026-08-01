@@ -11,15 +11,21 @@ export default function MessageInput({
   editingText,
   setEditingMessageId,
   setEditingText,
-  sendMessage: sendMessageProp,
+  sendMessage: sendMessageProp, // ✅ اگه پاس داده بشه (گروه)، اولویت داره
+  editMessage: editMessageProp, // ✅ همین‌طور برای ویرایش — اگه پاس داده
+  // بشه (حالت گروه)، از این استفاده می‌شه؛ قبلاً همیشه editMessage چت
+  // خصوصی از store صدا زده می‌شد، حتی توی گروه (که یعنی ویرایش پیام گروه
+  // هیچ‌وقت واقعاً به سرور گروه نمی‌رفت).
+  replyTarget = null, // { id, text, senderName } — وقتی از منوی پیام «ریپلای» زده بشه
+  onCancelReply = () => {},
 }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [imageFile, setImageFile] = useState(null);
   const [documentFile, setDocumentFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  const { sendMessage: storeSendMessage, editMessage, isSoundEnabled } = useChatStore();
-  const doSendMessage = sendMessageProp || storeSendMessage;
+  const { sendMessage: storeSendMessage, editMessage: storeEditMessage, isSoundEnabled } = useChatStore();
+  const doEditMessage = editMessageProp || storeEditMessage;
 
   useEffect(() => {
     if (editingMessageId) {
@@ -50,7 +56,7 @@ export default function MessageInput({
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
     if (editingMessageId) {
-      editMessage(editingMessageId, text, imageFile);
+      doEditMessage(editingMessageId, text, imageFile);
       setEditingMessageId(null);
       setEditingText("");
       setText("");
@@ -75,7 +81,7 @@ export default function MessageInput({
     resetAttachments();
   };
 
-  // ---- ارسال مستقیم از منوی + (بدون نیاز به دکمه‌ی ارسال) ----
+  // ---- ارسال مستقیم از منوی + (بدون نیاز به دکمه‌ی ارسال، مثل لوکیشن/مخاطب/نظرسنجی) ----
   const sendDirect = (payload) => {
     if (isSoundEnabled) playRandomKeyStrokeSound();
     const finalPayload = { text: "", image: null, file: null, fileName: null, meta: null, ...payload };
@@ -86,11 +92,16 @@ export default function MessageInput({
     }
   };
 
-  const removeImage = () => setImageFile(null);
-  const removeDocument = () => setDocumentFile(null);
+  const removeImage = () => {
+    setImageFile(null);
+  };
+
+  const removeDocument = () => {
+    setDocumentFile(null);
+  };
 
   return (
-    <div className="p-4 border-t border-slate-700/50">
+    <div className="p-3 border-t border-slate-700/50">
       {imageFile && (
         <div className="max-w-3xl mx-auto mb-3 flex items-center">
           <div className="relative">
@@ -126,7 +137,23 @@ export default function MessageInput({
         </div>
       )}
 
-      <form onSubmit={handleSend} className="max-w-3xl mx-auto flex space-x-4">
+      {replyTarget && (
+        <div className="max-w-3xl mx-auto mb-3 flex items-center gap-2 bg-slate-800/60 border-r-4 border-cyan-500 rounded-lg px-3 py-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-cyan-400 text-xs font-medium mb-0.5">{replyTarget.senderName || "پیام"}</p>
+            <p className="text-slate-400 text-xs truncate">{replyTarget.text || "پیوست"}</p>
+          </div>
+          <button
+            onClick={onCancelReply}
+            type="button"
+            className="text-slate-400 hover:text-slate-200 flex-shrink-0"
+          >
+            <XIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={handleSend} className="max-w-3xl mx-auto flex items-center gap-3">
         <input
           type="text"
           value={text}
@@ -142,7 +169,9 @@ export default function MessageInput({
           onSelectLocation={(coords) =>
             sendDirect({ messageType: "location", meta: { lat: coords.lat, lng: coords.lng } })
           }
-          onSelectContact={(contact) => sendDirect({ messageType: "contact", meta: contact })}
+          onSelectContact={(contact) =>
+            sendDirect({ messageType: "contact", meta: contact })
+          }
           onSelectPoll={(pollData) =>
             sendDirect({
               messageType: "poll",

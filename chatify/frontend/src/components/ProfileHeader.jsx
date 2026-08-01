@@ -311,6 +311,14 @@ function ProfileHeader({onNewGroup}) {
                         <LogOutIcon className="size-5"/>
                     </button>
 
+                    <button
+                        onClick={handleToggleSound}
+                        className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
+                        title={isSoundEnabled ? "قطع صدا" : "پخش صدا"}
+                    >
+                        {isSoundEnabled ? <Volume2Icon className="size-5"/> : <VolumeOffIcon className="size-5"/>}
+                    </button>
+
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setShowNewMenu((prev) => !prev)}
@@ -344,20 +352,8 @@ function ProfileHeader({onNewGroup}) {
                         </>
                     )}
 
-                    <button
-                        onClick={handleToggleSound}
-                        className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
-                        title={isSoundEnabled ? "قطع صدا" : "پخش صدا"}
-                    >
-                        {isSoundEnabled ? <Volume2Icon className="size-5"/> : <VolumeOffIcon className="size-5"/>}
-                    </button>
 
-                    <button
-                        className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
-                        title="تماس"
-                    >
-                        <PhoneIcon className="size-5"/>
-                    </button>
+
                 </div>
             </div>
 

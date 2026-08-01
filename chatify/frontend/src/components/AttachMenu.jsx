@@ -174,7 +174,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 }}
             />
 
-            {/* پیکر مخاطب */}
             {showContactPicker && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
@@ -227,7 +226,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 </div>
             )}
 
-            {/* ✅ NEW: مودال ساخت نظرسنجی */}
             {showPollModal && (
                 <PollCreateModal
                     onClose={() => setShowPollModal(false)}
@@ -241,9 +239,6 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
     );
 }
 
-// ======================================================================================================================
-// ✅ NEW: مودال ساخت نظرسنجی (سؤال + حداقل ۲ گزینه، امکان افزودن/حذف گزینه)
-// ======================================================================================================================
 function PollCreateModal({onClose, onCreate}) {
     const [question, setQuestion] = useState("");
     const [options, setOptions] = useState(["", ""]);

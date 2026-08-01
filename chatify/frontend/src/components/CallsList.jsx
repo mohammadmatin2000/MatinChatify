@@ -1,311 +1,194 @@
-import { useEffect, useState, useRef } from "react";
-import { useChatStore } from "../store/useChatStore";
-import { useAuthStore } from "../store/useAuthStore";
-import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
-import NoChatsFound from "./NoChatsFound";
+import { useEffect, useState } from "react";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
 import { faIR } from "date-fns/locale";
-import { ImageIcon, FileTextIcon, MapPinIcon, UserIcon, Trash2 } from "lucide-react";
+import { Video, Phone, PhoneMissed, PhoneIncoming, PhoneOutgoing, Users } from "lucide-react";
 import axios from "axios";
+import { useAuthStore } from "../store/useAuthStore";
+import { useCallStore } from "../store/useCallStore";
 
-function formatLastMessageTime(date) {
+function formatTime(date) {
   if (!date) return "";
-  if (isToday(date)) {
-    return format(date, "HH:mm");
-  }
+  if (isToday(date)) return format(date, "HH:mm");
   return formatDistanceToNowStrict(date, { addSuffix: true, locale: faIR });
 }
 
-// ✅ FIX: پیام خام رو یکدست می‌کنه — چه از REST بیاد (snake_case:
-// message_type/created_date) چه از WS زنده (camelCase: messageType/createdAt)
-// همیشه به یه شکل ثابت تبدیل می‌شه.
-function normalizeLastMessage(raw) {
-  if (!raw) return null;
-  return {
-    id: raw.id ?? raw._id,
-    text: raw.text || "",
-    image: raw.image || null,
-    file: raw.file || null,
-    fileName: raw.fileName || raw.file_name || null,
-    messageType: raw.messageType || raw.message_type || "text",
-    meta: raw.meta || null,
-    createdAt: raw.createdAt || raw.created_date || null,
-    deleted: raw.deleted || false,
-  };
+function formatDuration(seconds) {
+  if (!seconds) return null;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function ChatsList({ searchQuery = "" }) {
-  const {
-    getAllContacts,
-    allContacts,
-    isUsersLoading,
-    setSelectedUser,
-    onlineUsers,
-    addMessageEventListener,
-    deleteContact,
-  } = useChatStore();
+// تبدیل یه مسیر عکس (نسبی یا کامل) به آدرس قابل‌استفاده، با فال‌بک به آواتار پیش‌فرض
+function resolveImageUrl(path) {
+  if (!path) return "/avatar.png";
+  return path.startsWith("http") ? path : `http://localhost:8000${path}`;
+}
+
+function CallsList() {
   const { authUser } = useAuthStore();
-  const [lastMessages, setLastMessages] = useState({});
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const confirmTimerRef = useRef(null);
-
-  // ========================== دریافت لیست مخاطبین ==========================
-  useEffect(() => {
-    getAllContacts();
-  }, [getAllContacts]);
+  const { startCall, startGroupCall, callStatus, groupCallStatus } = useCallStore();
+  const [calls, setCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    return () => {
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    const fetchCalls = async () => {
+      try {
+        const token = localStorage.getItem("accessToken");
+        const headers = { Authorization: `Bearer ${token}` };
+
+        const [privateRes, groupRes] = await Promise.all([
+          axios.get("http://localhost:8000/call/calls/", { headers }),
+          axios.get("http://localhost:8000/call/group-calls/", { headers }),
+        ]);
+
+        const privateCalls = privateRes.data.map((c) => ({
+          ...c,
+          scope: "private",
+          is_outgoing: c.caller === authUser.id,
+        }));
+
+        const groupCalls = groupRes.data.map((c) => ({
+          ...c,
+          scope: "group",
+          is_outgoing: c.initiator === authUser.id,
+        }));
+
+        const merged = [...privateCalls, ...groupCalls].sort(
+          (a, b) => new Date(b.started_at) - new Date(a.started_at)
+        );
+
+        setCalls(merged);
+      } catch (err) {
+        console.error("Error fetching call history", err);
+      } finally {
+        setLoading(false);
+      }
     };
-  }, []);
+    fetchCalls();
+  }, [authUser?.id]);
 
-  // ========================== دریافت آخرین پیام‌ها (بار اول / fallback) ==========================
-  const fetchLastMessage = async (contactId) => {
-    try {
-      const token = localStorage.getItem("accessToken");
-      const res = await axios.get(`http://localhost:8000/chat/messages/${contactId}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const lastMsg = res.data[0] || null;
-      if (lastMsg) {
-        // ✅ FIX: نرمالایز می‌شه تا با پیام‌های زنده‌ی WS (camelCase) یکدست باشه
-        setLastMessages((prev) => ({ ...prev, [contactId]: normalizeLastMessage(lastMsg) }));
-      }
-    } catch (err) {
-      console.error("Error fetching last message for", contactId, err);
+  // ✅ NEW: شروع دوباره‌ی تماس با همون نوع (صوتی/تصویری) — دقیقاً مثل تب Calls واتساپ
+  const handleCallBack = (call, e) => {
+    e?.stopPropagation();
+
+    // اگه الان تو یه تماس دیگه‌ای هستیم، اجازه نده تماس جدید شروع بشه
+    if (callStatus !== "idle" || groupCallStatus !== "idle") return;
+
+    if (call.scope === "group") {
+      startGroupCall(
+        { id: call.group, name: call.group_name },
+        { name: authUser?.name || authUser?.fullName, image: authUser?.profile },
+        call.call_type
+      );
+    } else {
+      const otherUserId = call.is_outgoing ? call.receiver : call.caller;
+      startCall(
+        {
+          id: otherUserId,
+          myName: authUser?.name || authUser?.fullName,
+          myImage: authUser?.profile,
+        },
+        call.call_type
+      );
     }
   };
 
-  useEffect(() => {
-    if (!allContacts || allContacts.length === 0) return;
-    allContacts.forEach((contact) => {
-      const contactId = contact?.id || contact?._id;
-      if (!contactId) return;
-      fetchLastMessage(contactId);
-    });
-  }, [allContacts]);
-
-  // ========================== گوش دادن به رویدادهای پیام از اتصال مرکزی ==========================
-  useEffect(() => {
-    if (!authUser?.id) return;
-
-    const unsubscribe = addMessageEventListener((data) => {
-      switch (data.type) {
-        case "new_message_notify": {
-          const msg = data.message;
-          const myId = String(authUser.id);
-          const senderId = String(msg.senderId);
-          const receiverId = String(msg.receiverId);
-          const contactId = senderId === myId ? receiverId : senderId;
-
-          setLastMessages((prev) => ({
-            ...prev,
-            [contactId]: normalizeLastMessage(msg),
-          }));
-          break;
-        }
-
-        case "message_edit_notify": {
-          setLastMessages((prev) => {
-            const updated = { ...prev };
-            Object.keys(updated).forEach((contactId) => {
-              if (String(updated[contactId]?.id) === String(data.messageId)) {
-                updated[contactId] = { ...updated[contactId], text: data.newText };
-              }
-            });
-            return updated;
-          });
-          break;
-        }
-
-        case "message_delete_notify": {
-          setLastMessages((prev) => {
-            const updated = { ...prev };
-            Object.keys(updated).forEach((contactId) => {
-              if (String(updated[contactId]?.id) === String(data.messageId)) {
-                updated[contactId] = {
-                  ...updated[contactId],
-                  text: "",
-                  image: null,
-                  file: null,
-                  meta: null,
-                  deleted: true,
-                };
-              }
-            });
-            return updated;
-          });
-          break;
-        }
-
-        default:
-          break;
-      }
-    });
-
-    return unsubscribe;
-  }, [authUser?.id, addMessageEventListener]);
-
-  const handleDeleteClick = (e, contactRecordId) => {
-    e.stopPropagation();
-
-    if (confirmDeleteId === contactRecordId) {
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-      deleteContact(contactRecordId);
-      setConfirmDeleteId(null);
-      return;
-    }
-
-    setConfirmDeleteId(contactRecordId);
-    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-    confirmTimerRef.current = setTimeout(() => {
-      setConfirmDeleteId((current) => (current === contactRecordId ? null : current));
-    }, 3000);
-  };
-
-  if (isUsersLoading) return <UsersLoadingSkeleton />;
-  if (!allContacts || allContacts.length === 0) return <NoChatsFound />;
-
-  // ✅ فیلتر بر اساس سرچ (اسم یا ایمیل)
-  const q = searchQuery.trim().toLowerCase();
-  const filteredContacts = q
-    ? allContacts.filter((contact) => {
-        const name = (contact.name || "").toLowerCase();
-        const email = (contact.email || "").toLowerCase();
-        return name.includes(q) || email.includes(q);
-      })
-    : allContacts;
-
-  if (filteredContacts.length === 0) {
-    return <p className="text-center text-slate-500 text-sm py-8">چیزی با این عبارت پیدا نشد</p>;
-  }
+  if (loading) return <p className="text-center text-slate-500 text-sm py-8">در حال بارگذاری...</p>;
+  if (calls.length === 0) return <p className="text-center text-slate-500 text-sm py-8">هنوز تماسی ثبت نشده</p>;
 
   return (
     <div className="flex flex-col gap-1.5 px-1">
-      {filteredContacts.map((contact) => {
-        const contactId = contact?.id || contact?._id;
-        if (!contactId) return null;
+      {calls.map((call) => {
+        const isGroup = call.scope === "group";
+        const isOutgoing = call.is_outgoing;
 
-        const contactRecordId = contact.raw?.id;
-        const isConfirming = confirmDeleteId === contactRecordId;
+        const displayName = isGroup
+          ? call.group_name
+          : isOutgoing
+          ? call.receiver_name
+          : call.caller_name;
 
-        const lastMessageObj = lastMessages[contactId];
-        const messageType = lastMessageObj?.messageType || "text";
-        const hasImage = !!lastMessageObj?.image || messageType === "image";
-        const hasText = !!lastMessageObj?.text?.trim();
+        const isMissedOrRejected = isGroup
+          ? call.status === "no_answer"
+          : call.status === "missed" || call.status === "rejected";
 
-        // ✅ FIX: پیش‌نمایش برای انواع پیام (نه فقط متن/عکس)
-        let PreviewIcon = null;
-        let previewText;
-        if (lastMessageObj?.deleted) {
-          previewText = "این پیام حذف شد";
-        } else if (hasText) {
-          previewText = lastMessageObj.text;
-        } else if (messageType === "location") {
-          PreviewIcon = MapPinIcon;
-          previewText = "موقعیت مکانی";
-        } else if (messageType === "contact") {
-          PreviewIcon = UserIcon;
-          previewText = "مخاطب";
-        } else if (messageType === "file") {
-          PreviewIcon = FileTextIcon;
-          previewText = lastMessageObj?.fileName || "فایل";
-        } else if (hasImage) {
-          PreviewIcon = ImageIcon;
-          previewText = "عکس";
+        const DirectionIcon = isGroup
+          ? Users
+          : isMissedOrRejected
+          ? PhoneMissed
+          : isOutgoing
+          ? PhoneOutgoing
+          : PhoneIncoming;
+
+        const TypeIcon = call.call_type === "video" ? Video : Phone;
+        const durationLabel = formatDuration(call.duration);
+
+        // عکس پروفایل برای تماس خصوصی (کاربر مقابل) یا تماس گروهی (عکس گروه، اگه باشه)
+        const profileImagePath = isGroup
+          ? call.group_image
+          : isOutgoing
+          ? call.receiver_image
+          : call.caller_image;
+        const profilePicUrl = resolveImageUrl(profileImagePath);
+
+        let statusLabel;
+        if (isGroup) {
+          statusLabel = call.status === "no_answer" ? "بی‌پاسخ" : durationLabel || "پایان یافت";
+        } else if (call.status === "missed") {
+          statusLabel = "بی‌پاسخ";
+        } else if (call.status === "rejected") {
+          statusLabel = "رد شد";
         } else {
-          previewText = "هنوز پیامی ارسال نشده";
+          statusLabel = durationLabel || "پاسخ داده شد";
         }
-
-        const lastMessageDate = lastMessageObj?.createdAt ? new Date(lastMessageObj.createdAt) : null;
-        const timeLabel = formatLastMessageTime(lastMessageDate);
-        const isOnline = onlineUsers.some((id) => String(id) === String(contactId));
-
-        const displayName =
-          contact.name?.trim() ||
-          (contact.first_name || contact.last_name
-            ? `${contact.first_name || ""} ${contact.last_name || ""}`.trim()
-            : contact.email?.split("@")[0]) ||
-          "کاربر ناشناس";
-
-        const profilePicUrl = contact.profile?.startsWith("http")
-          ? contact.profile
-          : contact.raw?.profile?.startsWith("http")
-          ? contact.raw.profile
-          : contact.raw?.profile
-          ? `http://localhost:8000${contact.raw.profile}`
-          : "/avatar.png";
 
         return (
           <div
-            key={contactId}
-            onClick={() => setSelectedUser(contact)}
-            className="group relative flex items-center gap-3 p-3 rounded-2xl cursor-pointer
-                       bg-gradient-to-r from-slate-800/40 to-slate-800/10 border border-slate-700/40
-                       hover:from-cyan-500/10 hover:to-blue-500/5 hover:border-cyan-500/30
-                       hover:shadow-lg hover:shadow-cyan-500/5 transition-all duration-200"
+            key={`${call.scope}-${call.id}`}
+            onClick={(e) => handleCallBack(call, e)}
+            className="group flex items-center gap-3 p-3 rounded-2xl bg-gradient-to-r from-slate-800/40 to-slate-800/10
+                       border border-slate-700/40 hover:from-cyan-500/10 hover:to-blue-500/5 hover:border-cyan-500/30
+                       transition-all duration-200 cursor-pointer active:scale-[0.99]"
           >
-            <div className="relative flex-shrink-0">
-              <div className="w-[52px] h-[52px] rounded-full overflow-hidden ring-2 ring-cyan-500/10 group-hover:ring-cyan-400/40 transition-all">
+            <div className="w-[52px] h-[52px] rounded-full overflow-hidden ring-2 ring-cyan-500/10 flex items-center justify-center bg-slate-700/40">
+              {isGroup && !call.group_image ? (
+                <Users className="w-6 h-6 text-slate-300" />
+              ) : (
                 <img
                   src={profilePicUrl}
                   alt={displayName}
                   className="w-full h-full object-cover"
                   onError={(e) => (e.target.src = "/avatar.png")}
                 />
-              </div>
-              {isOnline && (
-                <span className="absolute bottom-0 left-0 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-slate-900 shadow-[0_0_6px_rgba(74,222,128,0.7)]" />
               )}
             </div>
 
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-slate-100 font-semibold text-[15px] truncate">{displayName}</h4>
-                {timeLabel && !isConfirming && (
-                  <span className="text-[11px] text-slate-500 flex-shrink-0 whitespace-nowrap group-hover:opacity-0 transition-opacity">
-                    {timeLabel}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1 mt-0.5">
-                {PreviewIcon && !lastMessageObj?.deleted && (
-                  <PreviewIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                )}
-                <p
-                  className={`text-[13px] truncate ${
-                    lastMessageObj?.deleted
-                      ? "italic text-slate-600"
-                      : hasText || PreviewIcon
-                      ? "text-slate-400"
-                      : "text-slate-600"
-                  }`}
-                >
-                  {previewText}
+              <h4 className="text-slate-100 font-semibold text-[15px] truncate">{displayName}</h4>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <DirectionIcon
+                  className={`w-3.5 h-3.5 flex-shrink-0 ${isMissedOrRejected ? "text-red-400" : "text-green-400"}`}
+                />
+                <p className={`text-[13px] truncate ${isMissedOrRejected ? "text-red-400" : "text-slate-400"}`}>
+                  {statusLabel}
                 </p>
               </div>
             </div>
 
-            {/* ✅ دکمه‌ی حذف — فقط موقع hover دیده می‌شه */}
-            {contactRecordId && (
+            <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+              <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                {formatTime(new Date(call.started_at))}
+              </span>
+              {/* ✅ NEW: آیکون تماس — قابل کلیک برای گرفتن دوباره‌ی تماس با همون نوع */}
               <button
-                onClick={(e) => handleDeleteClick(e, contactRecordId)}
-                className={`absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full transition-all duration-200 ${
-                  isConfirming
-                    ? "bg-red-500 text-white w-16 h-8 opacity-100"
-                    : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
-                }`}
-                title={isConfirming ? "تایید حذف" : "حذف گفتگو"}
+                onClick={(e) => handleCallBack(call, e)}
+                className="p-1 rounded-full hover:bg-cyan-500/10 transition-colors"
+                title={call.call_type === "video" ? "تماس تصویری" : "تماس صوتی"}
               >
-                {isConfirming ? (
-                  <span className="text-xs font-medium">مطمئنی؟</span>
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
+                <TypeIcon className="w-4 h-4 text-cyan-400" />
               </button>
-            )}
+            </div>
           </div>
         );
       })}
@@ -313,4 +196,4 @@ function ChatsList({ searchQuery = "" }) {
   );
 }
 
-export default ChatsList;
+export default CallsList;

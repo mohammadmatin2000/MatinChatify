@@ -1,9 +1,7 @@
 from django.urls import re_path
-from .consumers import GroupConsumer
+from .consumers import CallSignalingConsumer
 # ======================================================================================================================
-# مسیر WebSocket برای گروه‌ها
 websocket_urlpatterns = [
-    re_path(r'ws/groups/(?P<group_id>\d+)/$', GroupConsumer.as_asgi()),
-
+    re_path(r"ws/call/$", CallSignalingConsumer.as_asgi()),
 ]
 # ======================================================================================================================

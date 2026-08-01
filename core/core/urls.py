@@ -24,6 +24,7 @@ urlpatterns = [
     path("accounts/", include("accounts.urls")),
     path("chat/", include("chat.urls")),
     path("groups/", include("groups.urls")),
+    path("call/", include("calls.urls")),
 
 
     # مسیر JSON مستندات Swagger
