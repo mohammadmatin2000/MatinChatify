@@ -3,6 +3,7 @@ import { useChatStore } from "../store/useChatStore";
 import { SendIcon, XIcon, FileTextIcon } from "lucide-react";
 import useKeyboardSound from "../hooks/useKeyboardSound";
 import AttachMenu from "./AttachMenu";
+import VoiceRecorder from "./VoiceRecorder";
 
 export default function MessageInput({
   text,
@@ -50,6 +51,14 @@ export default function MessageInput({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const dispatchSend = (payload) => {
+    if (sendMessageProp) {
+      sendMessageProp(payload);
+    } else {
+      storeSendMessage(payload);
+    }
+  };
+
   const handleSend = (e) => {
     e.preventDefault();
     if (!text.trim() && !imageFile && !documentFile) return;
@@ -72,12 +81,7 @@ export default function MessageInput({
       payload = buildPayload({});
     }
 
-    if (sendMessageProp) {
-      sendMessageProp(payload);
-    } else {
-      storeSendMessage(payload);
-    }
-
+    dispatchSend(payload);
     resetAttachments();
   };
 
@@ -85,11 +89,24 @@ export default function MessageInput({
   const sendDirect = (payload) => {
     if (isSoundEnabled) playRandomKeyStrokeSound();
     const finalPayload = { text: "", image: null, file: null, fileName: null, meta: null, ...payload };
-    if (sendMessageProp) {
-      sendMessageProp(finalPayload);
-    } else {
-      storeSendMessage(finalPayload);
-    }
+    dispatchSend(finalPayload);
+  };
+
+  // ---- ارسال پیام صوتی/ویدیویی که از VoiceRecorder میاد (یه Blob خام) ----
+  const handleVoiceSend = (blob, messageType) => {
+    if (isSoundEnabled) playRandomKeyStrokeSound();
+
+    const fileName = `${messageType}-${Date.now()}.webm`;
+    const asFile = new File([blob], fileName, { type: blob.type });
+
+    dispatchSend({
+      text: "",
+      image: null,
+      file: asFile,
+      fileName,
+      messageType, // "voice" یا "video_note"
+      meta: null,
+    });
   };
 
   const removeImage = () => {
@@ -99,6 +116,8 @@ export default function MessageInput({
   const removeDocument = () => {
     setDocumentFile(null);
   };
+
+  const hasContent = !!(text.trim() || imageFile || documentFile);
 
   return (
     <div className="p-3 border-t border-slate-700/50">
@@ -180,10 +199,16 @@ export default function MessageInput({
           }
         />
 
+        {/* ✅ FIX: قبلاً دکمه‌ی ارسال و ضبط صدا/ویدیو جای هم رو می‌گرفتن (یکی
+            نبود اون یکی می‌اومد). حالا هر دو همیشه با هم دیده می‌شن — دقیقاً
+            مثل واتساب: میکروفون همیشه هست، دکمه‌ی ارسال هم همیشه هست (فقط
+            وقتی چیزی برای ارسال نیست غیرفعاله) */}
+        <VoiceRecorder onSend={handleVoiceSend} />
+
         <button
           type="submit"
-          disabled={!text.trim() && !imageFile && !documentFile}
-          className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-lg px-4 py-2 font-medium hover:from-cyan-600 hover:to-cyan-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!hasContent}
+          className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-lg px-4 py-2 font-medium hover:from-cyan-600 hover:to-cyan-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
         >
           <SendIcon className="w-5 h-5" />
         </button>

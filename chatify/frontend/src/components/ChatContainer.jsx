@@ -269,6 +269,25 @@ function ChatContainer() {
       );
     }
 
+    // ✅ NEW: پیام صوتی — پلیر audio ساده
+    if (type === "voice" && msg.file) {
+      return (
+        <audio controls preload="metadata" src={resolveUrl(msg.file)} className="max-w-[240px] h-9" />
+      );
+    }
+
+    // ✅ NEW: پیام ویدیویی دایره‌ای (مثل تلگرام) — پلیر video گرد
+    if (type === "video_note" && msg.file) {
+      return (
+        <video
+          controls
+          preload="metadata"
+          src={resolveUrl(msg.file)}
+          className="w-48 h-48 rounded-full object-cover bg-black"
+        />
+      );
+    }
+
     if (type === "file" && msg.file) {
       return (
         <a
