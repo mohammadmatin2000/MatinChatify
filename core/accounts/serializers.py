@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -6,7 +7,7 @@ from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth.tokens import default_token_generator
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from accounts.models import Profile
+from accounts.models import Profile,PhoneOTP
 User = get_user_model()
 # ======================================================================================================================
 class RegisterSerializer(serializers.ModelSerializer):
@@ -119,4 +120,39 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             "last_name",
             "image",
         ]
+# ======================================================================================================================
+class RequestOTPSerializer(serializers.Serializer):
+    phone_number = serializers.CharField()
+
+    def validate_phone_number(self, value):
+        if not re.match(r"^09\d{9}$", value):
+            raise serializers.ValidationError("شماره موبایل معتبر نیست.")
+        return value
+# ======================================================================================================================
+class VerifyOTPSerializer(serializers.Serializer):
+    phone_number = serializers.CharField()
+    code = serializers.CharField(max_length=6)
+
+    def validate(self, attrs):
+        phone_number = attrs["phone_number"]
+        code = attrs["code"]
+
+        otp = (
+            PhoneOTP.objects.filter(phone_number=phone_number, is_used=False)
+            .order_by("-created_date")
+            .first()
+        )
+        if not otp:
+            raise serializers.ValidationError("کدی برای این شماره ارسال نشده.")
+        if not otp.is_valid():
+            raise serializers.ValidationError("کد منقضی شده یا تعداد تلاش‌ها زیاد بوده.")
+        if otp.code != code:
+            otp.attempts += 1
+            otp.save(update_fields=["attempts"])
+            raise serializers.ValidationError("کد وارد شده اشتباه است.")
+
+        otp.is_used = True
+        otp.save(update_fields=["is_used"])
+        attrs["otp"] = otp
+        return attrs
 # ======================================================================================================================

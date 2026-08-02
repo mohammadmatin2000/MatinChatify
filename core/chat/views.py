@@ -1,42 +1,52 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from .models import ContactModels, ChatModels, MessageModels
-from .serializers import ContactSerializer, ChatSerializer, MessageSerializer
+from .serializers import ContactSerializer, AddContactSerializer, ChatSerializer, MessageSerializer
 from accounts.models import User
 from django.db.models import Q
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import serializers as drf_serializers
 # ======================================================================================================================
 class ContactViewSet(viewsets.ModelViewSet):
-    serializer_class = ContactSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return AddContactSerializer
+        return ContactSerializer
+
+    def get_serializer_context(self):
+        return {"request": self.request}
 
     def get_queryset(self):
         return ContactModels.objects.filter(
             user=self.request.user
         ).select_related("contact", "contact__user_profile")
 
-    def get_serializer_context(self):
-        return {"request": self.request}
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-    def perform_create(self, serializer):
-        contact_user = serializer.validated_data.get("contact")
+        contact_user = serializer.validated_data["contact_user"]
+        display_name = serializer.validated_data["display_name"]
 
-        if contact_user == self.request.user:
-            raise drf_serializers.ValidationError(
-                {"contact": "نمی‌توانید خودتان را به مخاطبین اضافه کنید."}
-            )
+        contact, _ = ContactModels.objects.update_or_create(
+            user=request.user,
+            contact=contact_user,
+            defaults={
+                "display_name": display_name,
+                "profile": getattr(contact_user, "user_profile", None),
+            },
+        )
+        return Response(
+            ContactSerializer(contact, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
-        if ContactModels.objects.filter(user=self.request.user, contact=contact_user).exists():
-            raise drf_serializers.ValidationError(
-                {"contact": "این کاربر قبلاً در لیست مخاطبین شماست."}
-            )
-
-        serializer.save(user=self.request.user)
 # ======================================================================================================================
 class SearchUsersView(APIView):
+    """چک کردن اینکه یه شماره/ایمیل توی چتیفای هست یا نه، قبل از سیو به‌عنوان مخاطب"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -45,7 +55,7 @@ class SearchUsersView(APIView):
             return Response([])
 
         users = User.objects.filter(
-            Q(email__icontains=query)
+            Q(email__icontains=query) | Q(phone_number__icontains=query)
         ).exclude(id=request.user.id)[:20]
 
         my_contact_ids = set(
@@ -59,23 +69,23 @@ class SearchUsersView(APIView):
             image = None
             if profile:
                 name = profile.get_fullname()
-
                 if profile.image:
                     image = request.build_absolute_uri(profile.image.url)
             result.append({
                 "id": u.id,
                 "email": u.email,
-                "name": name or u.email,
+                "phone_number": u.phone_number,
+                "name": name or u.email or u.phone_number,
                 "profile": image,
                 "is_contact": u.id in my_contact_ids,
             })
         return Response(result)
 # ======================================================================================================================
-# ======================================================================================================================
 class ChatViewSet(viewsets.ModelViewSet):
     queryset = ChatModels.objects.all()
     serializer_class = ChatSerializer
     permission_classes = [IsAuthenticated]
+
     def get_queryset(self):
         user = self.request.user
         return ChatModels.objects.filter(participants=user).prefetch_related("participants")

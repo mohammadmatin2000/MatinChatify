@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta  # اضافه کردن این خط برای import کردن timedelta
@@ -35,6 +36,7 @@ INSTALLED_APPS = [
     "chat",
     "calls",
     "groups",
+    "chchannels"
 
 ]
 
@@ -165,3 +167,8 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+
+SMS_DEV_MODE = False  # فعلاً True بذار تا وقتی الگو رو بسازی، بعد False کن
+KAVENEGAR_API_KEY = os.environ.get("KAVENEGAR_API_KEY", "676F7A35742F30464E494F634E334545674E336853656B547878747A552F427139795872396869364B636B3D")
+KAVENEGAR_VERIFY_TEMPLATE = "verify"  # اسم دقیق الگویی که توی پنل کاوه‌نگار ساختی

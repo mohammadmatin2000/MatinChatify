@@ -6,9 +6,11 @@ import {
     PencilIcon,
     PlusIcon,
     PhoneIcon,
+    MailIcon,
     XIcon,
-    Search,
+    UserIcon,
     UserPlus,
+    Search,
     Check,
     UsersIcon,
 } from "lucide-react";
@@ -24,15 +26,13 @@ function ProfileHeader({onNewGroup}) {
         logout,
         allContacts,
         getAllContacts,
+        addContact,
         searchResults,
         isSearching,
         searchUsers,
         clearSearch,
-        addContact,
     } = useChatStore();
 
-    // ✅ FIX: موقع خروج از حساب باید سوکت سیگنالینگ تماس هم بسته بشه،
-    // وگرنه با اکانت خارج‌شده باز می‌مونه و دوباره سعی می‌کنه reconnect کنه.
     const {disconnectCallSocket} = useCallStore();
 
     const [profile, setProfile] = useState({first_name: "", image: "/avatar.png"});
@@ -43,6 +43,16 @@ function ProfileHeader({onNewGroup}) {
 
     // ---- مودال افزودن مخاطب ----
     const [showAddContact, setShowAddContact] = useState(false);
+    const [addContactTab, setAddContactTab] = useState("phone"); // "phone" | "email"
+
+    // تب شماره
+    const [contactPhone, setContactPhone] = useState("");
+    const [contactDisplayName, setContactDisplayName] = useState("");
+    const [isAddingContact, setIsAddingContact] = useState(false);
+    const [addContactError, setAddContactError] = useState("");
+    const [addContactSuccess, setAddContactSuccess] = useState(false);
+
+    // تب ایمیل
     const [contactQuery, setContactQuery] = useState("");
     const [addingId, setAddingId] = useState(null);
     const debounceRef = useRef(null);
@@ -58,7 +68,6 @@ function ProfileHeader({onNewGroup}) {
     const inputRef = useRef(null);
     const accessToken = localStorage.getItem("accessToken");
 
-    // دریافت اطلاعات پروفایل
     useEffect(() => {
         if (!accessToken) return;
         const fetchProfile = async () => {
@@ -137,17 +146,55 @@ function ProfileHeader({onNewGroup}) {
     // ========================== مودال افزودن مخاطب ==========================
     const openAddContact = () => {
         setShowNewMenu(false);
+        setAddContactTab("phone");
+        setContactPhone("");
+        setContactDisplayName("");
         setContactQuery("");
         clearSearch();
+        setAddContactError("");
+        setAddContactSuccess(false);
         setShowAddContact(true);
     };
 
     const closeAddContact = () => {
         setShowAddContact(false);
+        setContactPhone("");
+        setContactDisplayName("");
         setContactQuery("");
         clearSearch();
+        setAddContactError("");
+        setAddContactSuccess(false);
     };
 
+    // ---- تب شماره ----
+    const handleAddContactByPhone = async (e) => {
+        e.preventDefault();
+        setAddContactError("");
+        setAddContactSuccess(false);
+
+        if (!/^09\d{9}$/.test(contactPhone)) {
+            setAddContactError("شماره موبایل معتبر نیست.");
+            return;
+        }
+        if (!contactDisplayName.trim()) {
+            setAddContactError("یه اسم برای این مخاطب وارد کن.");
+            return;
+        }
+
+        setIsAddingContact(true);
+        const result = await addContact({phoneNumber: contactPhone, displayName: contactDisplayName.trim()});
+        setIsAddingContact(false);
+
+        if (result) {
+            setAddContactSuccess(true);
+            setContactPhone("");
+            setContactDisplayName("");
+        } else {
+            setAddContactError("این شماره توی چتیفای ثبت‌نام نکرده.");
+        }
+    };
+
+    // ---- تب ایمیل ----
     const handleContactQueryChange = useCallback(
         (value) => {
             setContactQuery(value);
@@ -159,9 +206,9 @@ function ProfileHeader({onNewGroup}) {
         [searchUsers]
     );
 
-    const handleAddContact = async (userId) => {
-        setAddingId(userId);
-        await addContact(userId);
+    const handleAddContactByEmail = async (user) => {
+        setAddingId(user.id);
+        await addContact({userId: user.id, displayName: user.name || user.email});
         setAddingId(null);
     };
 
@@ -351,12 +398,10 @@ function ProfileHeader({onNewGroup}) {
                             </div>
                         </>
                     )}
-
-
-
                 </div>
             </div>
 
+            {/* مودال افزودن مخاطب - دو تب: شماره / ایمیل */}
             {showAddContact && (
                 <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
@@ -375,70 +420,153 @@ function ProfileHeader({onNewGroup}) {
                             </button>
                         </div>
 
-                        <div className="p-3 border-b border-slate-700/50 flex-shrink-0">
-                            <div className="flex items-center gap-2 bg-slate-900/60 rounded-lg px-3 py-2">
-                                <Search className="w-4 h-4 text-slate-400 flex-shrink-0"/>
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={contactQuery}
-                                    onChange={(e) => handleContactQueryChange(e.target.value)}
-                                    placeholder="ایمیل کاربر را وارد کنید..."
-                                    className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500"
-                                />
-                            </div>
+                        {/* تب‌ها */}
+                        <div className="flex border-b border-slate-700/50 flex-shrink-0">
+                            <button
+                                onClick={() => setAddContactTab("phone")}
+                                className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                                    addContactTab === "phone"
+                                        ? "text-cyan-400 border-b-2 border-cyan-400"
+                                        : "text-slate-400 hover:text-slate-200"
+                                }`}
+                            >
+                                با شماره موبایل
+                            </button>
+                            <button
+                                onClick={() => setAddContactTab("email")}
+                                className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                                    addContactTab === "email"
+                                        ? "text-cyan-400 border-b-2 border-cyan-400"
+                                        : "text-slate-400 hover:text-slate-200"
+                                }`}
+                            >
+                                با ایمیل
+                            </button>
                         </div>
 
-                        <div className="overflow-y-auto flex-1">
-                            {isSearching && (
-                                <p className="text-center text-slate-500 text-sm py-4">در حال جستجو...</p>
-                            )}
+                        {/* تب شماره */}
+                        {addContactTab === "phone" && (
+                            <form onSubmit={handleAddContactByPhone} className="p-5 space-y-4">
+                                {addContactError && (
+                                    <p className="text-red-500 text-sm text-center">{addContactError}</p>
+                                )}
+                                {addContactSuccess && (
+                                    <p className="text-green-500 text-sm text-center">مخاطب با موفقیت اضافه شد ✅</p>
+                                )}
 
-                            {!isSearching && contactQuery.trim() && searchResults.length === 0 && (
-                                <p className="text-center text-slate-500 text-sm py-4">کاربری یافت نشد</p>
-                            )}
-
-                            {!contactQuery.trim() && (
-                                <p className="text-center text-slate-500 text-sm py-6">
-                                    با ایمیل، مخاطب موردنظرت رو جستجو کن
-                                </p>
-                            )}
-
-                            {searchResults.map((user) => (
-                                <div
-                                    key={user.id}
-                                    className="flex items-center gap-3 p-3 hover:bg-slate-700/40 transition-colors"
-                                >
-                                    <div
-                                        className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
-                                        <img
-                                            src={user.profile || "/avatar.png"}
-                                            alt={user.name}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => (e.target.src = "/avatar.png")}
+                                <div>
+                                    <label className="text-slate-400 text-xs mb-1 block">شماره موبایل</label>
+                                    <div className="relative flex items-center bg-slate-900/60 rounded-lg px-3 py-2">
+                                        <PhoneIcon className="w-4 h-4 text-slate-400 flex-shrink-0"/>
+                                        <input
+                                            autoFocus
+                                            type="tel"
+                                            value={contactPhone}
+                                            onChange={(e) => setContactPhone(e.target.value)}
+                                            placeholder="09123456789"
+                                            dir="ltr"
+                                            className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500 mr-2"
                                         />
                                     </div>
-                                    <div className="flex flex-col min-w-0 flex-1">
-                                        <span className="text-slate-200 text-sm font-medium truncate">{user.name}</span>
-                                        <span className="text-slate-500 text-xs truncate">{user.email}</span>
-                                    </div>
-                                    {user.is_contact ? (
-                                        <span className="flex items-center gap-1 text-green-400 text-xs flex-shrink-0">
-                      <Check className="w-4 h-4"/> افزوده شد
-                    </span>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleAddContact(user.id)}
-                                            disabled={addingId === user.id}
-                                            className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-md flex-shrink-0 transition-colors"
-                                        >
-                                            <UserPlus className="w-3.5 h-3.5"/>
-                                            {addingId === user.id ? "..." : "افزودن"}
-                                        </button>
-                                    )}
                                 </div>
-                            ))}
-                        </div>
+
+                                <div>
+                                    <label className="text-slate-400 text-xs mb-1 block">اسم مخاطب</label>
+                                    <div className="relative flex items-center bg-slate-900/60 rounded-lg px-3 py-2">
+                                        <UserIcon className="w-4 h-4 text-slate-400 flex-shrink-0"/>
+                                        <input
+                                            type="text"
+                                            value={contactDisplayName}
+                                            onChange={(e) => setContactDisplayName(e.target.value)}
+                                            placeholder="مثلاً: علی رضایی"
+                                            className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500 mr-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={isAddingContact}
+                                    className="w-full flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                                >
+                                    <UserPlus className="w-4 h-4"/>
+                                    {isAddingContact ? "در حال افزودن..." : "افزودن مخاطب"}
+                                </button>
+                            </form>
+                        )}
+
+                        {/* تب ایمیل */}
+                        {addContactTab === "email" && (
+                            <>
+                                <div className="p-3 border-b border-slate-700/50 flex-shrink-0">
+                                    <div className="flex items-center gap-2 bg-slate-900/60 rounded-lg px-3 py-2">
+                                        <Search className="w-4 h-4 text-slate-400 flex-shrink-0"/>
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={contactQuery}
+                                            onChange={(e) => handleContactQueryChange(e.target.value)}
+                                            placeholder="ایمیل کاربر را وارد کنید..."
+                                            className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="overflow-y-auto flex-1">
+                                    {isSearching && (
+                                        <p className="text-center text-slate-500 text-sm py-4">در حال جستجو...</p>
+                                    )}
+
+                                    {!isSearching && contactQuery.trim() && searchResults.length === 0 && (
+                                        <p className="text-center text-slate-500 text-sm py-4">کاربری یافت نشد</p>
+                                    )}
+
+                                    {!contactQuery.trim() && (
+                                        <p className="text-center text-slate-500 text-sm py-6">
+                                            با ایمیل، مخاطب موردنظرت رو جستجو کن
+                                        </p>
+                                    )}
+
+                                    {searchResults.map((user) => (
+                                        <div
+                                            key={user.id}
+                                            className="flex items-center gap-3 p-3 hover:bg-slate-700/40 transition-colors"
+                                        >
+                                            <div
+                                                className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
+                                                <img
+                                                    src={user.profile || "/avatar.png"}
+                                                    alt={user.name}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => (e.target.src = "/avatar.png")}
+                                                />
+                                            </div>
+                                            <div className="flex flex-col min-w-0 flex-1">
+                                                <span
+                                                    className="text-slate-200 text-sm font-medium truncate">{user.name}</span>
+                                                <span
+                                                    className="text-slate-500 text-xs truncate">{user.email}</span>
+                                            </div>
+                                            {user.is_contact ? (
+                                                <span
+                                                    className="flex items-center gap-1 text-green-400 text-xs flex-shrink-0">
+                                                    <Check className="w-4 h-4"/> افزوده شد
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleAddContactByEmail(user)}
+                                                    disabled={addingId === user.id}
+                                                    className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-md flex-shrink-0 transition-colors"
+                                                >
+                                                    <UserPlus className="w-3.5 h-3.5"/>
+                                                    {addingId === user.id ? "..." : "افزودن"}
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

@@ -8,13 +8,17 @@ import toast from "react-hot-toast";
 // "does not provide an export named 'useChatStore'". با dynamic import
 // داخل خود توابع، این حلقه‌ی استاتیک قطع می‌شه.
 
+const BASE_URL = "http://127.0.0.1:8000";
+
 export const useAuthStore = create((set, get) => ({
   authUser: null,
   isCheckingAuth: true,
+  isSendingOtp: false,
+  isVerifyingOtp: false,
 
   // ✅ ایجاد instance از axios
   axiosInstance: axios.create({
-    baseURL: "http://127.0.0.1:8000",
+    baseURL: BASE_URL,
     withCredentials: true,
   }),
 
@@ -27,7 +31,7 @@ export const useAuthStore = create((set, get) => ({
     }
 
     try {
-      const res = await axios.get("http://127.0.0.1:8000/accounts/profile/update/", {
+      const res = await axios.get(`${BASE_URL}/accounts/profile/update/`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -42,26 +46,29 @@ export const useAuthStore = create((set, get) => ({
     } catch (error) {
       console.error("❌ Auth check failed:", error);
       localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
       set({ authUser: null });
     } finally {
       set({ isCheckingAuth: false });
     }
   },
 
-  // 🔐 ورود
+  // 🔐 ورود با ایمیل
   login: async (email, password) => {
     try {
-      const res = await axios.post("http://127.0.0.1:8000/accounts/login/", {
+      const res = await axios.post(`${BASE_URL}/accounts/login/`, {
         email,
         password,
       });
 
-      const { access, user } = res.data;
+      const { access, refresh, id, email: userEmail } = res.data;
       localStorage.setItem("accessToken", access);
+      localStorage.setItem("refreshToken", refresh);
+
+      const user = { id, email: userEmail };
       set({ authUser: user });
       toast.success("✅ ورود موفق!");
 
-      // ✅ اتصال مرکزی وضعیت آنلاین
       const { useChatStore } = await import("./useChatStore");
       useChatStore.getState().connectOnlineStatusSocket();
 
@@ -72,17 +79,72 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
+  // 📱 مرحله ۱: درخواست کد OTP برای شماره
+  requestOtp: async (phoneNumber) => {
+    set({ isSendingOtp: true });
+    try {
+      await axios.post(`${BASE_URL}/accounts/otp/request/`, {
+        phone_number: phoneNumber,
+      });
+      toast.success("کد تایید ارسال شد ✅");
+      return true;
+    } catch (error) {
+      const msg =
+        error.response?.data?.detail ||
+        error.response?.data?.phone_number?.[0] ||
+        "ارسال کد ناموفق بود";
+      toast.error(msg);
+      return false;
+    } finally {
+      set({ isSendingOtp: false });
+    }
+  },
+
+  // 📱 مرحله ۲: تایید کد و ورود/ثبت‌نام خودکار
+  verifyOtp: async (phoneNumber, code) => {
+    set({ isVerifyingOtp: true });
+    try {
+      const res = await axios.post(`${BASE_URL}/accounts/otp/verify/`, {
+        phone_number: phoneNumber,
+        code,
+      });
+
+      const { access, refresh, id, phone_number } = res.data;
+      localStorage.setItem("accessToken", access);
+      localStorage.setItem("refreshToken", refresh);
+
+      const user = { id, phone_number };
+      set({ authUser: user });
+      toast.success("✅ ورود موفق!");
+
+      const { useChatStore } = await import("./useChatStore");
+      useChatStore.getState().connectOnlineStatusSocket();
+
+      return user;
+    } catch (error) {
+      const msg =
+        error.response?.data?.non_field_errors?.[0] ||
+        error.response?.data?.detail ||
+        "کد وارد شده اشتباه است";
+      toast.error(msg);
+      return null;
+    } finally {
+      set({ isVerifyingOtp: false });
+    }
+  },
+
   // 🚪 خروج
   logout: async () => {
     try {
-      await axios.post("http://127.0.0.1:8000/accounts/logout/");
+      const refresh = localStorage.getItem("refreshToken");
+      await axios.post(`${BASE_URL}/accounts/logout/`, { refresh });
     } catch (error) {
       console.warn("Logout API error (ignored):", error);
     } finally {
       localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
       set({ authUser: null });
 
-      // ✅ بستن کامل اتصال مرکزی + پاکسازی state چت
       const { useChatStore } = await import("./useChatStore");
       useChatStore.getState().logout();
     }

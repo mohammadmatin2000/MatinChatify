@@ -6,8 +6,11 @@ from .views import (
     ActivateAccount,
     LogoutView,
     CustomTokenObtainPairView,
-    UserProfileUpdateView
+    UserProfileUpdateView,
+    RequestPhoneOTPView,
+    VerifyPhoneOTPView
 )
+
 # ======================================================================================================================
 urlpatterns = [
     path("register/", RegisterViews.as_view(), name="register"),
@@ -26,6 +29,11 @@ urlpatterns = [
     ),
     path("activate-account/", ActivateAccount.as_view(), name="activate-account"),
 
-    path("profile/update/", UserProfileUpdateView.as_view(), name="profile-update")
+    path("profile/update/", UserProfileUpdateView.as_view(), name="profile-update"),
+
+    path("otp/request/", RequestPhoneOTPView.as_view(), name="otp-request"),
+    path("otp/verify/", VerifyPhoneOTPView.as_view(), name="otp-verify"),
+
+
 ]
 # ======================================================================================================================

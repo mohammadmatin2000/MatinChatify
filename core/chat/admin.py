@@ -1,20 +1,11 @@
 from django.contrib import admin
 from .models import ContactModels, ChatModels, MessageModels
 # ======================================================================================================================
-# مدیریت مخاطبین در پنل ادمین
 class ContactAdmin(admin.ModelAdmin):
-
-    # نمایش فیلدهای موردنظر در لیست
-    list_display = ('user', 'contact')
-
-    # فیلتر بر اساس فیلدهای مختلف
+    list_display = ('user', 'contact', 'display_name')
     list_filter = ('user', 'contact')
-
-    # جستجو بر اساس فیلدهای مختلف
-    search_fields = ('user__email', 'contact__email')
-
-    # تنظیمات فیلدهای نمایش داده‌شده در فرم اضافه/ویرایش
-    fields = ('user', 'contact')
+    search_fields = ('user__email', 'contact__email', 'contact__phone_number', 'display_name')
+    fields = ('user', 'contact', 'display_name')
 
 
 # ثبت مدل Contact در پنل ادمین

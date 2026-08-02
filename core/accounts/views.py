@@ -13,16 +13,22 @@ from django.utils.http import urlsafe_base64_decode
 from rest_framework.views import APIView
 from django.contrib.auth.hashers import make_password
 from rest_framework.permissions import IsAuthenticated,AllowAny
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.parsers import MultiPartParser,FormParser
+from .models import PhoneOTP
+from .sms import send_otp_sms
 from .serializers import (
     RegisterSerializer,
     EmailSerializer,
     SetNewPasswordSerializer,
     ActivationSerializer,
     CustomTokenObtainPairSerializer,
-    UserProfileUpdateSerializer
+    UserProfileUpdateSerializer,
+    RequestOTPSerializer,
+    VerifyOTPSerializer
 )
 User = get_user_model()
 # ======================================================================================================================
@@ -171,4 +177,67 @@ class UserProfileUpdateView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user.user_profile
+# ======================================================================================================================
+class RequestPhoneOTPView(generics.GenericAPIView):
+    serializer_class = RequestOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_number = serializer.validated_data["phone_number"]
+
+        recent = PhoneOTP.objects.filter(
+            phone_number=phone_number, is_used=False
+        ).order_by("-created_date").first()
+        if recent and (timezone.now() - recent.created_date) < timedelta(seconds=60):
+            return Response(
+                {"detail": "کد قبلی هنوز معتبره، کمی صبر کن."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        code = PhoneOTP.generate_code()
+        PhoneOTP.objects.create(
+            phone_number=phone_number,
+            code=code,
+            expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        sent = send_otp_sms(phone_number, code)
+        if not sent:
+            return Response(
+                {"detail": "ارسال پیامک ناموفق بود."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"detail": "کد ارسال شد."}, status=status.HTTP_200_OK)
+# ======================================================================================================================
+class VerifyPhoneOTPView(generics.GenericAPIView):
+    serializer_class = VerifyOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_number = serializer.validated_data["phone_number"]
+
+        user, created = User.objects.get_or_create(
+            phone_number=phone_number,
+            defaults={"is_verified": True},
+        )
+        if created:
+            user.set_unusable_password()
+            user.save()
+        elif not user.is_verified:
+            user.is_verified = True
+            user.save(update_fields=["is_verified"])
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "id": user.id,
+                "phone_number": user.phone_number,
+            },
+            status=status.HTTP_200_OK,
+        )
 # ======================================================================================================================

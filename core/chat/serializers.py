@@ -4,20 +4,25 @@ from accounts.models import User, Profile
 from django.db.models import Q
 # ======================================================================================================================
 class ContactSerializer(serializers.ModelSerializer):
+    """فقط برای خروجی/نمایش لیست مخاطبین"""
     name = serializers.SerializerMethodField()
+    phone_number = serializers.CharField(source="contact.phone_number", read_only=True)
     contact_email = serializers.EmailField(source="contact.email", read_only=True)
     profile = serializers.SerializerMethodField()
     user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = ContactModels
-        fields = ['id', 'user', 'contact', 'contact_email', 'name', 'profile']
+        fields = ['id', 'user', 'contact', 'phone_number', 'contact_email', 'display_name', 'name', 'profile']
 
     def get_name(self, obj):
+        # اولویت با اسمی که خودِ کاربر ذخیره کرده، بعد اسم واقعی پروفایل، در آخر ایمیل/شماره
+        if obj.display_name:
+            return obj.display_name
         profile = getattr(obj.contact, "user_profile", None)
         if profile and (profile.first_name or profile.last_name):
             return profile.get_fullname()
-        return obj.contact.email
+        return obj.contact.email or obj.contact.phone_number
 
     def get_profile(self, obj):
         profile = getattr(obj.contact, "user_profile", None)
@@ -27,11 +32,53 @@ class ContactSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(profile.image.url)
         return None
 # ======================================================================================================================
+class AddContactSerializer(serializers.Serializer):
+    """
+    برای ساخت مخاطب جدید. یا با شماره تلفن (مثل واتساب) یا با
+    ایمیل/آیدی کاربر (روش قدیمی جستجو). حداقل یکی از این سه باید بیاد.
+    """
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    user_id = serializers.IntegerField(required=False)
+    display_name = serializers.CharField(max_length=255)
+
+    def validate(self, attrs):
+        phone_number = attrs.get("phone_number")
+        email = attrs.get("email")
+        user_id = attrs.get("user_id")
+
+        if not phone_number and not email and not user_id:
+            raise serializers.ValidationError(
+                "شماره، ایمیل یا کاربر مشخص نشده."
+            )
+
+        contact_user = None
+        if user_id:
+            contact_user = User.objects.filter(id=user_id).first()
+        elif phone_number:
+            contact_user = User.objects.filter(phone_number=phone_number).first()
+        elif email:
+            contact_user = User.objects.filter(email=email).first()
+
+        if not contact_user:
+            raise serializers.ValidationError(
+                {"detail": "این کاربر توی چتیفای پیدا نشد."}
+            )
+
+        request = self.context.get("request")
+        if request and contact_user == request.user:
+            raise serializers.ValidationError(
+                {"detail": "نمی‌تونی خودتو مخاطب کنی."}
+            )
+
+        attrs["contact_user"] = contact_user
+        return attrs
+# ======================================================================================================================
 class ChatSerializer(serializers.ModelSerializer):
     participants = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), many=True)
     class Meta:
         model = ChatModels
-        fields = ['id', 'participants','created_date', 'updated_date']
+        fields = ['id', 'participants', 'created_date', 'updated_date']
 # ======================================================================================================================
 class MessageSerializer(serializers.ModelSerializer):
     last_message = serializers.SerializerMethodField(read_only=True)

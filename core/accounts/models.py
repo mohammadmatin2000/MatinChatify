@@ -3,7 +3,9 @@ from django.db.models.signals import post_save
 from django.contrib.auth.base_user import BaseUserManager
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.utils import timezone
 from django.db import models
+import random
 # ======================================================================================================================
 class UserType(models.IntegerChoices):
     customer = 1, _("customer")
@@ -11,15 +13,8 @@ class UserType(models.IntegerChoices):
     superuser = 3, _("superuser")
 # ======================================================================================================================
 class UserManager(BaseUserManager):
-    """
-    Custom user model manager where email is the unique identifiers
-    for authentication instead of usernames.
-    """
 
     def create_user(self, email, password, **extra_fields):
-        """
-        Create and save a User with the given email and password.
-        """
         if not email:
             raise ValueError(_("The Email must be set"))
         email = self.normalize_email(email)
@@ -29,9 +24,7 @@ class UserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password, **extra_fields):
-        """
-        Create and save a SuperUser with the given email and password.
-        """
+
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
@@ -43,9 +36,18 @@ class UserManager(BaseUserManager):
         if extra_fields.get("is_superuser") is not True:
             raise ValueError(_("Superuser must have is_superuser=True."))
         return self.create_user(email, password, **extra_fields)
+
+    def create_user_with_phone(self, phone_number, **extra_fields):
+        if not phone_number:
+            raise ValueError(_("The phone number must be set"))
+        user = self.model(phone_number=phone_number, **extra_fields)
+        user.set_unusable_password()
+        user.save()
+        return user
 # ======================================================================================================================
 class User(AbstractBaseUser, PermissionsMixin):
-    email = models.EmailField(_("email address"), unique=True)
+    email = models.EmailField(_("email address"), unique=True, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, unique=True, null=True, blank=True)
     is_staff = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     is_verified = models.BooleanField(default=False)
@@ -62,7 +64,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     def __str__(self):
-        return self.email
+        return self.email or self.phone_number or f"user-{self.pk}"
 # ======================================================================================================================
 class Profile(models.Model):
     user = models.OneToOneField(
@@ -88,4 +90,28 @@ class Profile(models.Model):
 def create_profile(sender, instance, created, **kwargs):
     if created:
         Profile.objects.create(user=instance, pk=instance.pk)
+# ======================================================================================================================
+class PhoneOTP(models.Model):
+    phone_number = models.CharField(max_length=20, db_index=True)
+    code = models.CharField(max_length=6)
+    created_date = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        indexes = [models.Index(fields=["phone_number", "is_used"])]
+
+    def __str__(self):
+        return f"OTP({self.phone_number})"
+
+    @staticmethod
+    def generate_code():
+        return f"{random.randint(0, 999999):06d}"
+
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+
+    def is_valid(self):
+        return not self.is_used and not self.is_expired() and self.attempts < 5
 # ======================================================================================================================

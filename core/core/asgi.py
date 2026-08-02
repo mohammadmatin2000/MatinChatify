@@ -16,6 +16,7 @@ from asgiref.sync import sync_to_async
 from chat.routing import websocket_urlpatterns as chat_ws
 from groups.routing import websocket_urlpatterns as groups_ws
 from calls.routing import websocket_urlpatterns as calls_ws
+from chchannels.routing import websocket_urlpatterns as chchannels_ws
 
 # ======================================================================================================================
 # تنظیمات Django
@@ -81,7 +82,7 @@ application = ProtocolTypeRouter({
     "http": django_asgi_app,  # HTTP معمولی Django
     "websocket": JWTAuthMiddleware(
         URLRouter(
-            chat_ws + groups_ws + calls_ws # همه WebSocket URL ها
+            chat_ws + groups_ws + calls_ws + chchannels_ws # همه WebSocket URL ها
         )
     ),
 })

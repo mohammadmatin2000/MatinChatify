@@ -13,6 +13,7 @@ class CustomUserAdmin(UserAdmin):
     list_display = (
         "id",
         "email",
+        "phone_number",
         "is_staff",
         "is_superuser",
         "is_active",
@@ -21,7 +22,6 @@ class CustomUserAdmin(UserAdmin):
 
     # Fields used for filtering results in the admin panel
     list_filter = (
-        "email",
         "is_staff",
         "is_superuser",
         "is_active",
@@ -29,16 +29,16 @@ class CustomUserAdmin(UserAdmin):
     )
 
     # Fields used for searching users in the admin panel
-    search_fields = ("email",)
+    search_fields = ("email", "phone_number")
 
-    # Orders the results by the email field
-    ordering = ("email",)
+    # Orders the results by id (چون email و phone_number هر دو می‌تونن null باشن، مرتب‌سازی روشون خطا/بی‌نظمی می‌ده)
+    ordering = ("id",)
 
     # Defines how the user details are grouped and displayed in the admin panel
     fieldsets = (
         (
             "Authentication",
-            {"fields": ("email", "password")},
+            {"fields": ("email", "phone_number", "password")},
         ),
         (
             "Permissions",
@@ -70,6 +70,7 @@ class CustomUserAdmin(UserAdmin):
                 "classes": ("wide",),  # Styling applied to the form
                 "fields": (
                     "email",
+                    "phone_number",
                     "password1",
                     "password2",
                     "is_staff",  # Required fields for creating a new user

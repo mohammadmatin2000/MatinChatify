@@ -193,6 +193,7 @@ export const useChatStore = create((set, get) => ({
     },
 
     // ---------------- 📇 Contacts & Chats ----------------
+    // ---------------- 📇 Contacts & Chats ----------------
     getAllContacts: async () => {
         const token = localStorage.getItem("accessToken");
         if (!token) return toast.error("No access token found");
@@ -204,9 +205,10 @@ export const useChatStore = create((set, get) => ({
             const data = await res.json();
             set({
                 allContacts: data.map((c) => ({
-                    _id: c.contact || c.user,
+                    _id: c.contact,
                     email: c.contact_email || null,
-                    name: c.name || c.contact_email || `Contact ${c.contact || c.user}`,
+                    phoneNumber: c.phone_number || null,
+                    name: c.name || c.display_name || c.phone_number || c.contact_email,
                     profile: c.profile || null,
                     raw: c,
                 })),
@@ -218,7 +220,7 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ---------------- 🔍 Search & Add Contact ----------------
+    // ---------------- 🔍 Search (فعلاً بلااستفاده، برای آینده نگه داشته شده) ----------------
     searchUsers: async (query) => {
         const token = localStorage.getItem("accessToken");
         if (!token) return;
@@ -242,27 +244,35 @@ export const useChatStore = create((set, get) => ({
 
     clearSearch: () => set({searchResults: []}),
 
-    addContact: async (contactId) => {
+    // ✅ حالا با شماره + اسم دلخواه کار می‌کنه (مثل واتساب)
+    // ✅ حالا با شماره یا با user_id (از جستجوی ایمیل) کار می‌کنه
+    addContact: async ({phoneNumber, userId, displayName}) => {
         const token = localStorage.getItem("accessToken");
         if (!token) return toast.error("No access token found");
         try {
+            const body = {display_name: displayName};
+            if (phoneNumber) body.phone_number = phoneNumber;
+            if (userId) body.user_id = userId;
+
             const res = await fetch(`${API_BASE_URL}/chat/contacts/`, {
                 method: "POST",
                 headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
-                body: JSON.stringify({contact: contactId}),
+                body: JSON.stringify(body),
             });
 
             if (!res.ok) {
                 const err = await res.json();
-                const msg = err.contact?.[0] || "خطا در افزودن مخاطب";
+                const msg =
+                    err.phone_number?.[0] ||
+                    err.email?.[0] ||
+                    err.display_name?.[0] ||
+                    err.detail ||
+                    "خطا در افزودن مخاطب";
                 toast.error(msg);
                 return false;
             }
 
             toast.success("مخاطب با موفقیت اضافه شد");
-            set((state) => ({
-                searchResults: state.searchResults.map((u) => (u.id === contactId ? {...u, is_contact: true} : u)),
-            }));
             get().getAllContacts();
             return true;
         } catch {

@@ -4,36 +4,26 @@ from accounts.models import User, Profile
 # مدل مخاطبین (رابطه‌ی بین یک کاربر و کسی که به لیست مخاطبینش اضافه کرده)
 class ContactModels(models.Model):
 
-    # کاربری که این مخاطب رو اضافه کرده
     user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="contacts"
+        User, on_delete=models.CASCADE, related_name="contacts"
     )
-
-    # پروفایل مرتبط (اختیاری - برای دسترسی سریع‌تر به اطلاعات پروفایل)
     profile = models.ForeignKey(
-        Profile,
-        on_delete=models.CASCADE,
-        related_name="contacts",
-        null=True,
-        blank=True
+        Profile, on_delete=models.CASCADE, related_name="contacts",
+        null=True, blank=True
     )
-
-    # کاربری که به‌عنوان مخاطب اضافه شده
     contact = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="contacted_by"
+        User, on_delete=models.CASCADE, related_name="contacted_by"
     )
 
-    # تاریخ اضافه شدن مخاطب
-    created_date = models.DateTimeField(auto_now_add=True)
+    # اسمی که خودِ کاربر برای این مخاطب انتخاب کرده (مثل واتساب)
+    display_name = models.CharField(max_length=255, blank=True, null=True)
 
-    # تاریخ آخرین بروزرسانی رکورد مخاطب
+    created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
 
-    # نمایش رابطه‌ی مخاطب (کاربر - مخاطب)
+    class Meta:
+        unique_together = ("user", "contact")
+
     def __str__(self):
         return f"{self.user} - {self.contact}"
 # ======================================================================================================================
