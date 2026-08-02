@@ -1,6 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { PhoneIcon, PhoneOffIcon, VideoIcon, VideoOffIcon, MicIcon, MicOffIcon, XIcon, UsersIcon } from "lucide-react";
+import {
+  PhoneIcon,
+  PhoneOffIcon,
+  VideoIcon,
+  VideoOffIcon,
+  MicIcon,
+  MicOffIcon,
+  XIcon,
+  UsersIcon,
+  Minimize2Icon,
+  Volume2Icon,
+  VolumeXIcon,
+} from "lucide-react";
 import { useCallStore } from "../store/useCallStore";
 import { useAuthStore } from "../store/useAuthStore";
 
@@ -10,12 +22,16 @@ const resolveAvatar = (img) => {
   return img.startsWith("http") ? img : `${API_BASE_URL}${img}`;
 };
 
+function formatElapsed(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 // یه تایل که هم ویدیو هم صدا رو مدیریت می‌کنه.
-// ✅ FIX: قبلاً وقتی showVideo=false بود (مثل تماس صوتی، یا دوربین طرف
-// خاموش)، هیچ عنصر <audio>/<video> ای رندر نمی‌شد — یعنی صدا هم پخش
-// نمی‌شد، چون هیچ عنصری به stream وصل نبود. الان توی اون حالت یه
-// <audio> مخفی جدا صدا رو پخش می‌کنه.
-function VideoTile({ stream, muted = false, name, image, showVideo = true }) {
+// وقتی showVideo=false بود (مثل تماس صوتی، یا دوربین طرف خاموش)، یه
+// <audio> مخفی جدا صدا رو پخش می‌کنه تا صدا از دست نره.
+function VideoTile({ stream, muted = false, name, image, showVideo = true, speakerOn = true }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
 
@@ -28,12 +44,18 @@ function VideoTile({ stream, muted = false, name, image, showVideo = true }) {
     }
   }, [stream, showingVideoEl]);
 
-  // ✅ FIX: وقتی <video> نشون داده نمی‌شه، صدا رو از طریق یه <audio> مخفی پخش کن
   useEffect(() => {
     if (!showingVideoEl && audioRef.current) {
       audioRef.current.srcObject = stream || null;
     }
   }, [stream, showingVideoEl]);
+
+  // ✅ NEW: اعمال وضعیت بلندگو (کم/زیاد بودن صدا) روی این تایل
+  useEffect(() => {
+    const vol = speakerOn ? 1 : 0.15;
+    if (videoRef.current) videoRef.current.volume = vol;
+    if (audioRef.current) audioRef.current.volume = vol;
+  }, [speakerOn, showingVideoEl]);
 
   return (
     <div className="relative bg-slate-800 rounded-xl overflow-hidden aspect-video flex items-center justify-center border border-slate-700/50">
@@ -44,7 +66,6 @@ function VideoTile({ stream, muted = false, name, image, showVideo = true }) {
           <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-slate-600">
             <img src={resolveAvatar(image)} alt={name} className="w-full h-full object-cover" onError={(e) => (e.target.src = "/avatar.png")} />
           </div>
-          {/* ✅ NEW: عنصر صوتی مخفی — بدون این، هیچ صدایی از طرف مقابل شنیده نمی‌شد */}
           <audio ref={audioRef} autoPlay muted={muted} />
         </>
       )}
@@ -73,6 +94,33 @@ function GroupCallModal() {
   } = useCallStore();
 
   const { authUser } = useAuthStore();
+
+  const [elapsed, setElapsed] = useState(0);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const startedAtRef = useRef(null);
+
+  // ✅ NEW: تایمر مدت تماس گروهی — از لحظه‌ای که واقعاً وارد تماس شدیم شروع میشه
+  useEffect(() => {
+    if (groupCallStatus === "in-call") {
+      if (!startedAtRef.current) startedAtRef.current = Date.now();
+      const tick = () => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+      tick();
+      const interval = setInterval(tick, 1000);
+      return () => clearInterval(interval);
+    } else {
+      startedAtRef.current = null;
+      setElapsed(0);
+    }
+  }, [groupCallStatus]);
+
+  // ✅ NEW: هر بار تماس تموم میشه، حالت کوچک‌شده ریست بشه
+  useEffect(() => {
+    if (groupCallStatus === "idle") {
+      setIsMinimized(false);
+      setIsSpeakerOn(true);
+    }
+  }, [groupCallStatus]);
 
   // ---------- بنر دعوت به تماس گروهی (وقتی خودمون توی تماس نیستیم) ----------
   if (groupCallStatus === "idle" && groupCallInvite) {
@@ -129,17 +177,71 @@ function GroupCallModal() {
   const participantList = Object.entries(groupParticipants);
   const isVideoCall = groupCallType === "video";
 
+  // ✅ NEW: حالت کوچک‌شده (Picture-in-Picture ساده)
+  if (isMinimized) {
+    return createPortal(
+      <div
+        onClick={() => setIsMinimized(false)}
+        className="fixed bottom-5 left-5 z-[270] flex items-center gap-3 bg-slate-900/95 backdrop-blur-md
+                   border border-slate-700/60 rounded-2xl shadow-2xl px-3 py-2 cursor-pointer
+                   hover:border-cyan-500/40 transition-colors"
+        dir="rtl"
+      >
+        <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+          <UsersIcon className="w-5 h-5 text-cyan-400" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-slate-100 text-xs font-semibold truncate max-w-[110px]">
+            {activeGroupName || "تماس گروهی"}
+          </p>
+          <p className="text-slate-400 text-[11px]">{formatElapsed(elapsed)}</p>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            leaveGroupCall();
+          }}
+          className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center flex-shrink-0"
+          title="ترک تماس"
+        >
+          <PhoneOffIcon className="w-4 h-4 text-white" />
+        </button>
+      </div>,
+      document.body
+    );
+  }
+
   return createPortal(
     <div className="fixed inset-0 z-[250] bg-slate-950 flex flex-col">
       {/* هدر */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-        <div className="flex items-center gap-2 text-slate-200">
-          <UsersIcon className="w-4 h-4 text-cyan-400" />
-          <span className="font-medium text-sm">{activeGroupName || "تماس گروهی"}</span>
+        <button
+          onClick={() => setIsMinimized(true)}
+          className="w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center transition-colors"
+          title="کوچک کردن"
+        >
+          <Minimize2Icon className="w-4 h-4 text-slate-300" />
+        </button>
+
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-2 text-slate-200">
+            <UsersIcon className="w-4 h-4 text-cyan-400" />
+            <span className="font-medium text-sm">{activeGroupName || "تماس گروهی"}</span>
+          </div>
+          <span className="text-xs text-slate-500 mt-0.5">
+            {formatElapsed(elapsed)} · {participantList.length + 1} نفر {isVideoCall ? "· تصویری" : "· صوتی"}
+          </span>
         </div>
-        <span className="text-xs text-slate-500">
-          {participantList.length + 1} نفر {isVideoCall ? "· تصویری" : "· صوتی"}
-        </span>
+
+        <button
+          onClick={() => setIsSpeakerOn((v) => !v)}
+          className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+            isSpeakerOn ? "bg-slate-800 hover:bg-slate-700 text-slate-300" : "bg-white text-slate-900"
+          }`}
+          title={isSpeakerOn ? "کاهش صدا" : "افزایش صدا"}
+        >
+          {isSpeakerOn ? <Volume2Icon className="w-4 h-4" /> : <VolumeXIcon className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* شبکه‌ی ویدیو/آواتار شرکت‌کننده‌ها */}
@@ -151,6 +253,7 @@ function GroupCallModal() {
             name={`${authUser?.name || "من"} (خودم)`}
             image={authUser?.image || authUser?.profile}
             showVideo={isVideoCall && !isCameraOff}
+            speakerOn={isSpeakerOn}
           />
 
           {participantList.map(([userId, p]) => (
@@ -160,6 +263,7 @@ function GroupCallModal() {
               name={p.name}
               image={p.image}
               showVideo={isVideoCall}
+              speakerOn={isSpeakerOn}
             />
           ))}
         </div>

@@ -86,6 +86,8 @@ class GroupMessages(models.Model):
         ("file", "File"),
         ("location", "Location"),
         ("contact", "Contact"),
+        ("voice", "Voice"),
+        ("video_note", "Video note"),
     )
 
     # گروهی که این پیام توش ارسال شده

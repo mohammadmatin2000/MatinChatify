@@ -65,6 +65,8 @@ class MessageModels(models.Model):
         ("file", "File"),
         ("location", "Location"),
         ("contact", "Contact"),
+        ("voice", "Voice"),
+        ("video_note", "Video note"),
     )
 
     # فرستنده‌ی پیام
