@@ -78,7 +78,7 @@ class ChannelViewSet(viewsets.ModelViewSet):
         ChannelMember.objects.filter(channel=channel, user=request.user).delete()
         return Response({"detail": "از کانال خارج شدی."}, status=status.HTTP_200_OK)
 # ======================================================================================================================
-class ChannelMessageViewSet(viewsets.ModelViewSet):
+class ChannelMessageViewSet(generics.ListAPIView):
     serializer_class = ChannelMessageSerializer
     permission_classes = [IsAuthenticated]
 
@@ -87,12 +87,4 @@ class ChannelMessageViewSet(viewsets.ModelViewSet):
         return ChannelMessage.objects.filter(
             channel_id=channel_id, channel__members__user=self.request.user
         ).select_related("sender")
-
-    def perform_create(self, serializer):
-        channel = get_object_or_404(ChannelModels, id=self.kwargs.get("channel_id"))
-        membership = channel.members.filter(user=self.request.user).first()
-        if not membership or membership.role != "admin":
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("فقط ادمین کانال می‌تونه پیام بذاره.")
-        serializer.save(sender=self.request.user, channel=channel)
 # ======================================================================================================================

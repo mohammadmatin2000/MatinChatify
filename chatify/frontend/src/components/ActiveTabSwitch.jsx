@@ -1,5 +1,5 @@
 import { useChatStore } from "../store/useChatStore";
-import { MessageCircle, Contact, Users, Phone } from "lucide-react";
+import { MessageCircle, Contact, Users, Phone, Radio } from "lucide-react";
 
 function ActiveTabSwitch() {
   const { activeTab, setActiveTab } = useChatStore();
@@ -8,6 +8,7 @@ function ActiveTabSwitch() {
     { key: "chats", label: "گفتگوها", icon: MessageCircle },
     { key: "contacts", label: "مخاطبین", icon: Contact },
     { key: "groups", label: "گروه‌ها", icon: Users },
+    { key: "channels", label: "چنل‌ها", icon: Radio },
     { key: "calls", label: "تماس‌ها", icon: Phone },
   ];
 

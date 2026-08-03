@@ -13,9 +13,11 @@ import {
     Search,
     Check,
     UsersIcon,
+    Radio,
 } from "lucide-react";
 import {useChatStore} from "../store/useChatStore";
 import {useCallStore} from "../store/useCallStore";
+import CreateChannelModal from "./CreateChannelModal";
 import axios from "axios";
 
 const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
@@ -63,6 +65,9 @@ function ProfileHeader({onNewGroup}) {
     const [groupDescription, setGroupDescription] = useState("");
     const [selectedMemberIds, setSelectedMemberIds] = useState([]);
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+
+    // ---- مودال ساخت چنل ----
+    const [showCreateChannel, setShowCreateChannel] = useState(false);
 
     const fileInputRef = useRef(null);
     const inputRef = useRef(null);
@@ -166,7 +171,6 @@ function ProfileHeader({onNewGroup}) {
         setAddContactSuccess(false);
     };
 
-    // ---- تب شماره ----
     const handleAddContactByPhone = async (e) => {
         e.preventDefault();
         setAddContactError("");
@@ -194,7 +198,6 @@ function ProfileHeader({onNewGroup}) {
         }
     };
 
-    // ---- تب ایمیل ----
     const handleContactQueryChange = useCallback(
         (value) => {
             setContactQuery(value);
@@ -285,6 +288,12 @@ function ProfileHeader({onNewGroup}) {
         } finally {
             setIsCreatingGroup(false);
         }
+    };
+
+    // ========================== مودال ساخت چنل ==========================
+    const openCreateChannel = () => {
+        setShowNewMenu(false);
+        setShowCreateChannel(true);
     };
 
     if (!accessToken) return null;
@@ -388,12 +397,20 @@ function ProfileHeader({onNewGroup}) {
                                     <UsersIcon className="w-4 h-4 text-cyan-400 shrink-0"/>
                                     ساخت گروه
                                 </button>
+
                                 <button
                                     onClick={openAddContact}
                                     className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
                                 >
                                     <UserPlus className="w-4 h-4 text-cyan-400 shrink-0"/>
                                     ساخت مخاطب
+                                </button>
+                                <button
+                                    onClick={openCreateChannel}
+                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
+                                >
+                                    <Radio className="w-4 h-4 text-violet-400 shrink-0"/>
+                                    ساخت چنل
                                 </button>
                             </div>
                         </>
@@ -420,7 +437,6 @@ function ProfileHeader({onNewGroup}) {
                             </button>
                         </div>
 
-                        {/* تب‌ها */}
                         <div className="flex border-b border-slate-700/50 flex-shrink-0">
                             <button
                                 onClick={() => setAddContactTab("phone")}
@@ -444,7 +460,6 @@ function ProfileHeader({onNewGroup}) {
                             </button>
                         </div>
 
-                        {/* تب شماره */}
                         {addContactTab === "phone" && (
                             <form onSubmit={handleAddContactByPhone} className="p-5 space-y-4">
                                 {addContactError && (
@@ -495,7 +510,6 @@ function ProfileHeader({onNewGroup}) {
                             </form>
                         )}
 
-                        {/* تب ایمیل */}
                         {addContactTab === "email" && (
                             <>
                                 <div className="p-3 border-b border-slate-700/50 flex-shrink-0">
@@ -681,6 +695,9 @@ function ProfileHeader({onNewGroup}) {
                     </div>
                 </div>
             )}
+
+            {/* مودال ساخت چنل */}
+            <CreateChannelModal isOpen={showCreateChannel} onClose={() => setShowCreateChannel(false)} />
         </div>
     );
 }

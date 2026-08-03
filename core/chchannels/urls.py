@@ -8,7 +8,7 @@ router.register(r"channels", ChannelViewSet, basename="channel")
 urlpatterns = router.urls + [
     path(
         "channels/<int:channel_id>/messages/",
-        ChannelMessageViewSet.as_view({"get": "list", "post": "create"}),
+        ChannelMessageViewSet.as_view(),
         name="channel-messages",
     ),
 ]

@@ -1,13 +1,16 @@
 import {useState, useRef, useCallback} from "react";
 import {useChatStore} from "../store/useChatStore";
+import {useChannelStore} from "../store/useChannelStore";
 import BorderAnimatedContainer from "../components/BorderAnimatedContainer";
 import ProfileHeader from "../components/ProfileHeader";
 import ActiveTabSwitch from "../components/ActiveTabSwitch";
 import ChatsList from "../components/ChatsList";
 import ContactList from "../components/ContactList";
 import GroupsList from "../components/GroupsList";
+import ChannelsList from "../components/ChannelsList";
 import ChatContainer from "../components/ChatContainer";
 import GroupChatContainer from "../components/GroupChatContainer";
+import ChannelChatContainer from "../components/ChannelChatContainer";
 import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 import {Search, X} from "lucide-react";
 import CallsList from "../components/CallsList";
@@ -17,6 +20,7 @@ const MAX_PULL = 90; // حداکثر مقداری که اجازه می‌دیم 
 
 function ChatPage() {
     const {activeTab, selectedUser, selectedGroup, setSelectedGroup} = useChatStore();
+    const {selectedChannel, setSelectedChannel} = useChannelStore();
 
     const [searchOpen, setSearchOpen] = useState(false);
     const [pullOffset, setPullOffset] = useState(0);
@@ -93,7 +97,7 @@ function ChatPage() {
             <BorderAnimatedContainer className="flex h-full">
                 {/* Sidebar */}
                 <div className="w-80 bg-slate-800/50 backdrop-blur-sm flex flex-col overflow-hidden">
-                    <ProfileHeader user={selectedUser || selectedGroup}/>
+                    <ProfileHeader user={selectedUser || selectedGroup || selectedChannel}/>
                     <ActiveTabSwitch/>
 
                     {/* دستگیره‌ی کشش + نوار سرچ */}
@@ -154,6 +158,7 @@ function ChatPage() {
                         {activeTab === "chats" && <ChatsList searchQuery={searchOpen ? searchQuery : ""}/>}
                         {activeTab === "contacts" && <ContactList searchQuery={searchOpen ? searchQuery : ""}/>}
                         {activeTab === "groups" && <GroupsList searchQuery={searchOpen ? searchQuery : ""}/>}
+                        {activeTab === "channels" && <ChannelsList searchQuery={searchOpen ? searchQuery : ""}/>}
                         {activeTab === "calls" && <CallsList/>}
                     </div>
                 </div>
@@ -171,8 +176,16 @@ function ChatPage() {
                         />
                     )}
 
+                    {/* چت چنل */}
+                    {selectedChannel && (
+                        <ChannelChatContainer
+                            channel={selectedChannel}
+                            onBack={() => setSelectedChannel(null)}
+                        />
+                    )}
+
                     {/* هیچ انتخابی نشده */}
-                    {!selectedUser && !selectedGroup && (
+                    {!selectedUser && !selectedGroup && !selectedChannel && (
                         <NoConversationPlaceholder message="یک گفت‌وگو انتخاب کنید"/>
                     )}
                 </div>
