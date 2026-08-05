@@ -1,6 +1,7 @@
-import {useState, useRef, useCallback} from "react";
+import {useState, useRef, useCallback, useEffect} from "react";
 import {useChatStore} from "../store/useChatStore";
 import {useChannelStore} from "../store/useChannelStore";
+import {useCallStore} from "../store/useCallStore";
 import BorderAnimatedContainer from "../components/BorderAnimatedContainer";
 import ProfileHeader from "../components/ProfileHeader";
 import ActiveTabSwitch from "../components/ActiveTabSwitch";
@@ -21,6 +22,8 @@ const MAX_PULL = 90; // حداکثر مقداری که اجازه می‌دیم 
 function ChatPage() {
     const {activeTab, selectedUser, selectedGroup, setSelectedGroup} = useChatStore();
     const {selectedChannel, setSelectedChannel} = useChannelStore();
+    // ✅ NEW: برای کوچک‌کردن خودکار تماس فعال وقتی گفتگو عوض می‌شه
+    const {callStatus, groupCallStatus, minimizeCall} = useCallStore();
 
     const [searchOpen, setSearchOpen] = useState(false);
     const [pullOffset, setPullOffset] = useState(0);
@@ -30,6 +33,20 @@ function ChatPage() {
     const listRef = useRef(null);
     const dragStartY = useRef(0);
     const draggingRef = useRef(false);
+
+    // ✅ NEW: هر بار که «محل فعلی» (پیوی/گروه/چنل) عوض بشه، اگه یه تماس
+    // (۱به۱ یا گروهی) در حال انجامه، خودکار کوچیکش می‌کنیم — دیگه رو
+    // صفحه‌ی گفتگوی جدید کامل باز نمی‌مونه و دوتا صفحه هم‌زمان دیده
+    // نمی‌شه.
+    useEffect(() => {
+        const hasActiveCall =
+            (callStatus !== "idle" && callStatus !== "ringing") ||
+            groupCallStatus === "in-call";
+        if (hasActiveCall) {
+            minimizeCall();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedUser, selectedGroup, selectedChannel]);
 
     // شروع کشش (لمس یا موس)
     const handleDragStart = useCallback(

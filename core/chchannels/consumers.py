@@ -16,6 +16,8 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         self.channel_id = int(self.scope["url_route"]["kwargs"]["channel_id"])
         self.group_name = f"channel_{self.channel_id}"
         self.user = self.scope.get("user")
+        print("CONNECT STAR")
+        print(self.scope)
 
         if not self.user or self.user.is_anonymous:
             await self.close(code=4001)
@@ -28,6 +30,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        print("ACCEPTING CONNECTION")
         await self.accept()
 
         await self.channel_layer.group_send(
@@ -66,6 +69,8 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             await self.handle_edit_message(data)
         elif action == "delete_message":
             await self.handle_delete_message(data)
+        elif action == "vote_poll":  # ✅ NEW
+            await self.handle_vote_poll(data)
         # اکشن‌های ناشناخته سایلنت نادیده گرفته می‌شن
 
     # -------------------------
@@ -77,8 +82,13 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         image_base64 = data.get("image")
         file_base64 = data.get("file")
         file_name = data.get("fileName")
+        # ✅ FIX: meta اضافه شد — بدون این، پیام‌های لوکیشن/مخاطب/نظرسنجی
+        # (که فقط meta دارن، نه متن/عکس/فایل) اصلاً پردازش نمی‌شدن
+        meta = data.get("meta")
 
-        if not text and not image_base64 and not file_base64:
+        # ✅ FIX: meta هم توی چک "پیام خالیه؟" لحاظ شد، وگرنه لوکیشن/مخاطب/
+        # نظرسنجی همیشه اینجا ساکت return می‌شدن
+        if not text and not image_base64 and not file_base64 and not meta:
             return
 
         # ✅ چک زنده‌ی نقش به‌جای فلگ کش‌شده‌ی موقع connect
@@ -95,6 +105,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
                 image_base64=image_base64,
                 file_base64=file_base64,
                 file_name=file_name,
+                meta=meta,
             )
         except ObjectDoesNotExist:
             await self.send_error("کانال پیدا نشد")
@@ -154,6 +165,36 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         )
 
     # -------------------------
+    # ✅ NEW: رأی دادن به نظرسنجی (هر عضوی، نه فقط ادمین‌ها، می‌تونه رأی بده)
+    # -------------------------
+    async def handle_vote_poll(self, data):
+        message_id = data.get("messageId")
+        option_id = data.get("optionId")
+        if not message_id or not option_id:
+            return
+
+        try:
+            meta = await self.vote_poll(message_id, option_id)
+        except ObjectDoesNotExist:
+            await self.send_error("پیام پیدا نشد")
+            return
+
+        if meta is None:
+            return
+
+        await self.channel_layer.group_send(
+            self.group_name,
+            {"type": "poll_update_broadcast", "messageId": message_id, "meta": meta},
+        )
+
+    async def poll_update_broadcast(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "poll_update",
+            "messageId": event["messageId"],
+            "meta": event["meta"],
+        }))
+
+    # -------------------------
     # Broadcast handlers
     # -------------------------
     async def chat_message(self, event):
@@ -193,7 +234,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         return member.role if member else None
 
     @database_sync_to_async
-    def save_message(self, text, message_type="text", image_base64=None, file_base64=None, file_name=None):
+    def save_message(self, text, message_type="text", image_base64=None, file_base64=None, file_name=None, meta=None):
         channel = ChannelModels.objects.get(id=self.channel_id)
 
         image_file = None
@@ -208,6 +249,18 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             ext = (file_name.split(".")[-1] if file_name and "." in file_name else "bin")
             doc_file = ContentFile(base64.b64decode(filestr), name=f"{uuid.uuid4()}.{ext}")
 
+        # ✅ NEW: برای پیام‌های poll، به هر آپشن یه id بده و لیست voters خالی بساز
+        # (دقیقاً هماهنگ با منطق chat/consumers.py برای نظرسنجی خصوصی)
+        if message_type == "poll" and meta and "options" in meta:
+            meta = {
+                "question": meta.get("question", ""),
+                "multiple": bool(meta.get("multiple", False)),
+                "options": [
+                    {"id": opt.get("id") or str(uuid.uuid4()), "text": opt.get("text", ""), "voters": []}
+                    for opt in meta["options"]
+                ],
+            }
+
         message = ChannelMessage.objects.create(
             channel=channel,
             sender=self.user,
@@ -216,6 +269,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             image=image_file,
             file=doc_file,
             file_name=file_name if doc_file else None,
+            meta=meta,  # ✅ FIX: قبلاً اصلاً پاس داده نمی‌شد
         )
 
         return self._serialize_message(message)
@@ -235,6 +289,38 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             raise PermissionDeniedError()
         message.delete()
 
+    # ✅ NEW: منطق رأی‌گیری — دقیقاً هماهنگ با chat/consumers.py برای چت خصوصی
+    @database_sync_to_async
+    def vote_poll(self, message_id, option_id):
+        message = ChannelMessage.objects.get(id=message_id, channel_id=self.channel_id, message_type="poll")
+
+        meta = message.meta or {}
+        options = meta.get("options", [])
+        multiple = meta.get("multiple", False)
+        uid = self.user.id
+
+        target_option = next((o for o in options if o.get("id") == option_id), None)
+        if not target_option:
+            return None
+
+        already_voted = uid in target_option.get("voters", [])
+
+        if not multiple:
+            for o in options:
+                if uid in o.get("voters", []):
+                    o["voters"].remove(uid)
+
+        if already_voted:
+            if uid in target_option["voters"]:
+                target_option["voters"].remove(uid)
+        else:
+            target_option.setdefault("voters", []).append(uid)
+
+        meta["options"] = options
+        message.meta = meta
+        message.save(update_fields=["meta", "updated_date"])
+        return meta
+
     def serialize_user(self, user):
         return {
             "id": user.id,
@@ -250,6 +336,8 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             "image": message.image.url if message.image else None,
             "file": message.file.url if message.file else None,
             "fileName": message.file_name,
+            "meta": message.meta,  # ✅ FIX: قبلاً اصلاً برنمی‌گشت، برای همین
+            # پیام زنده‌ی لوکیشن/مخاطب/نظرسنجی حتی اگه ذخیره می‌شد، تو UI خالی می‌موند
             "sender": self.serialize_user(message.sender),
             "created_date": message.created_date.isoformat(),
         }

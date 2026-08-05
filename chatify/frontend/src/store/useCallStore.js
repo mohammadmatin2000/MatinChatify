@@ -53,6 +53,11 @@ export const useCallStore = create((set, get) => ({
   isCaller: false,
   callConnectedAt: null,
 
+  // ✅ NEW: قبلاً "کوچک‌شدن" تماس یه state محلی داخل خودِ CallModal/
+  // GroupCallModal بود، برای همین هیچ صفحه‌ی دیگه‌ای (مثل ChatPage) راهی
+  // نداشت بهش بگه "الان وقتشه کوچیک بشی". حالا این state مشترکه.
+  isMinimized: false,
+
   // ---- وضعیت تماس گروهی (mesh) ----
   groupCallStatus: "idle", // idle | in-call
   groupCallType: null,
@@ -141,6 +146,7 @@ export const useCallStore = create((set, get) => ({
       isCaller: true,
       callConnectedAt: null,
       pendingCandidates: [],
+      isMinimized: false,
     });
 
     let stream;
@@ -203,6 +209,7 @@ export const useCallStore = create((set, get) => ({
           isCaller: false,
           callConnectedAt: null,
           pendingCandidates: [],
+          isMinimized: false,
         });
         break;
 
@@ -297,7 +304,7 @@ export const useCallStore = create((set, get) => ({
     if (remoteUser) {
       sendSignal({ type: "call_reject", targetId: remoteUser.id });
     }
-    set({ callStatus: "idle", remoteUser: null, incomingOffer: null, isCaller: false, callConnectedAt: null, pendingCandidates: [] });
+    set({ callStatus: "idle", remoteUser: null, incomingOffer: null, isCaller: false, callConnectedAt: null, pendingCandidates: [], isMinimized: false });
   },
 
   // ========================== پایان دادن به تماس دو نفره ==========================
@@ -335,6 +342,7 @@ export const useCallStore = create((set, get) => ({
       isCaller: false,
       callConnectedAt: null,
       pendingCandidates: [],
+      isMinimized: false,
     });
   },
 
@@ -369,6 +377,7 @@ export const useCallStore = create((set, get) => ({
         peerConnection: null,
         isCaller: false,
         callConnectedAt: null,
+        isMinimized: false,
       });
 
       sendSignal({
@@ -403,6 +412,11 @@ export const useCallStore = create((set, get) => ({
       participantIds: existingIds,
     });
   },
+
+  // ========================== ✅ NEW: کنترل کوچک/بزرگ‌شدن تماس (مشترک بین ۱به۱ و گروهی) ==========================
+  minimizeCall: () => set({ isMinimized: true }),
+  restoreCall: () => set({ isMinimized: false }),
+  toggleCallMinimized: () => set((state) => ({ isMinimized: !state.isMinimized })),
 
   // ========================== کنترل میکروفون ==========================
   toggleMic: () => {
@@ -443,6 +457,7 @@ export const useCallStore = create((set, get) => ({
       groupCallInvite: null,
       callError: null,
       pendingGroupCandidates: {},
+      isMinimized: false,
     });
 
     if (participantIds && participantIds.length) {
@@ -514,6 +529,7 @@ export const useCallStore = create((set, get) => ({
       isMicMuted: false,
       isCameraOff: false,
       pendingGroupCandidates: {},
+      isMinimized: false,
     });
   },
 
@@ -539,6 +555,7 @@ export const useCallStore = create((set, get) => ({
           peerConnection: null,
           isCaller: false,
           callConnectedAt: null,
+          isMinimized: false,
         });
         break;
       }

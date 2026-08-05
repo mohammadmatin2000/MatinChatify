@@ -37,10 +37,18 @@ class ChannelMember(models.Model):
         return f"{self.user} in {self.channel} ({self.role})"
 # ======================================================================================================================
 class ChannelMessage(models.Model):
+    # ✅ FIX: انواع پیام رو با ChatConsumer/GroupCallLog و بقیه‌ی اپ هماهنگ کردیم —
+    # قبلاً فقط text/image/file بود، برای همین voice/video_note/location/contact/poll
+    # (که همه از این choices استفاده می‌کردن) عملاً پشتیبانی نمی‌شدن
     MESSAGE_TYPE_CHOICES = (
         ("text", "متن"),
         ("image", "عکس"),
         ("file", "فایل"),
+        ("voice", "پیام صوتی"),
+        ("video_note", "پیام ویدیویی"),
+        ("location", "لوکیشن"),
+        ("contact", "مخاطب"),
+        ("poll", "نظرسنجی"),
     )
     channel = models.ForeignKey(ChannelModels, on_delete=models.CASCADE, related_name="messages")
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="channel_messages")
@@ -49,6 +57,8 @@ class ChannelMessage(models.Model):
     image = models.ImageField(upload_to="channel_messages/", blank=True, null=True)
     file = models.FileField(upload_to="channel_files/", blank=True, null=True)
     file_name = models.CharField(max_length=255, blank=True, null=True)
+    # ✅ NEW: برای پیام‌های لوکیشن (lat/lng)، مخاطب (name/email/image)، و نظرسنجی (question/options)
+    meta = models.JSONField(null=True, blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
 

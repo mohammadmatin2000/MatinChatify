@@ -95,3 +95,6 @@ class AddChannelMemberSerializer(serializers.Serializer):
         attrs["target_user"] = target_user
         return attrs
 # ======================================================================================================================
+class UpdateMemberRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=["admin", "subscriber"])
+# ======================================================================================================================

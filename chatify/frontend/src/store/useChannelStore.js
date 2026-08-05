@@ -16,7 +16,7 @@ export const useChannelStore = create((set, get) => ({
     if (!token) return;
     set({ isChannelsLoading: true });
     try {
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -36,7 +36,7 @@ export const useChannelStore = create((set, get) => ({
     const token = localStorage.getItem("accessToken");
     if (!token) return null;
     try {
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ name, description, is_public: isPublic }),
@@ -60,7 +60,7 @@ export const useChannelStore = create((set, get) => ({
     const token = localStorage.getItem("accessToken");
     if (!token) return null;
     try {
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/join/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/join/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ invite_code: inviteCode }),
@@ -85,7 +85,7 @@ export const useChannelStore = create((set, get) => ({
     const token = localStorage.getItem("accessToken");
     if (!token) return false;
     try {
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/${channelId}/leave/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/${channelId}/leave/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -111,7 +111,7 @@ export const useChannelStore = create((set, get) => ({
     const token = localStorage.getItem("accessToken");
     if (!token) return false;
     try {
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/${channelId}/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/${channelId}/`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -131,15 +131,21 @@ export const useChannelStore = create((set, get) => ({
     }
   },
 
-  // ---------------- 👥 اعضا ----------------
+  // ---------------- 👥 اعضا (فقط ادمین می‌تونه صداش بزنه، بک‌اند خودش ۴۰۳ برمی‌گردونه) ----------------
   fetchMembers: async (channelId) => {
     const token = localStorage.getItem("accessToken");
     if (!token || !channelId) return;
     set({ isMembersLoading: true });
     try {
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/${channelId}/members/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/${channelId}/members/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) {
+        // ✅ برای عضو عادی (غیرادمین) بک‌اند ۴۰۳ می‌ده، این یعنی خطا نیست
+        // بلکه محدودیت دسترسیه — پس toast خطا نمی‌ندازیم، فقط لیست خالی می‌مونه
+        set({ members: [] });
+        return;
+      }
       const data = await res.json();
       set({ members: Array.isArray(data) ? data : [] });
     } catch {
@@ -158,7 +164,7 @@ export const useChannelStore = create((set, get) => ({
       if (email) body.email = email;
       if (userId) body.user_id = userId;
 
-      const res = await fetch(`${API_BASE_URL}/chchannels/channels/${channelId}/add-member/`, {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/${channelId}/add-member/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -176,6 +182,53 @@ export const useChannelStore = create((set, get) => ({
       return true;
     } catch {
       toast.error("خطا در افزودن عضو");
+      return false;
+    }
+  },
+
+  // ---------------- 🔧 تغییر نقش عضو (ارتقا به ادمین / عزل از ادمین) ----------------
+  updateMemberRole: async (channelId, memberId, role) => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/${channelId}/members/${memberId}/role/`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.detail || "خطا در تغییر نقش عضو");
+        return false;
+      }
+      toast.success(role === "admin" ? "به ادمین ارتقا یافت" : "از ادمینی عزل شد");
+      get().fetchMembers(channelId);
+      return true;
+    } catch {
+      toast.error("خطا در تغییر نقش عضو");
+      return false;
+    }
+  },
+
+  // ---------------- ❌ حذف/اخراج عضو ----------------
+  removeMember: async (channelId, memberId) => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_BASE_URL}/channels/channels/${channelId}/members/${memberId}/remove/`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.detail || "خطا در حذف عضو");
+        return false;
+      }
+      set((state) => ({ members: state.members.filter((m) => m.id !== memberId) }));
+      toast.success("عضو از چنل حذف شد");
+      return true;
+    } catch {
+      toast.error("خطا در حذف عضو");
       return false;
     }
   },

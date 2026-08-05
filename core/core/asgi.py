@@ -79,7 +79,7 @@ class JWTAuthMiddleware(BaseMiddleware):
 # ASGI Application
 # ======================================================================================================================
 application = ProtocolTypeRouter({
-    "http": django_asgi_app,  # HTTP معمولی Django
+    "http": django_asgi_app,
     "websocket": JWTAuthMiddleware(
         URLRouter(
             chat_ws + groups_ws + calls_ws + chchannels_ws # همه WebSocket URL ها

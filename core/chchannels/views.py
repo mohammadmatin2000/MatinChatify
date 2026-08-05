@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status, generics
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -6,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from .models import ChannelModels, ChannelMember, ChannelMessage
 from .serializers import (
     ChannelSerializer, ChannelMemberSerializer, ChannelMessageSerializer,
-    JoinChannelSerializer, AddChannelMemberSerializer,
+    JoinChannelSerializer, AddChannelMemberSerializer, UpdateMemberRoleSerializer,
 )
 # ======================================================================================================================
 class ChannelViewSet(viewsets.ModelViewSet):
@@ -14,7 +15,6 @@ class ChannelViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # کانال‌هایی که کاربر عضوشونه
         return ChannelModels.objects.filter(members__user=self.request.user).distinct()
 
     def get_serializer_context(self):
@@ -24,9 +24,22 @@ class ChannelViewSet(viewsets.ModelViewSet):
         channel = serializer.save(owner=self.request.user)
         ChannelMember.objects.create(channel=channel, user=self.request.user, role="admin")
 
+    def perform_destroy(self, instance):
+        if instance.owner != self.request.user:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("فقط مالک کانال می‌تونه حذفش کنه.")
+        instance.delete()
+
+    # ✅ فقط ادمین می‌تونه لیست کامل اعضا رو ببینه
     @action(detail=True, methods=["get"], url_path="members")
     def list_members(self, request, pk=None):
         channel = self.get_object()
+        my_membership = channel.members.filter(user=request.user).first()
+        if not my_membership or my_membership.role != "admin":
+            return Response(
+                {"detail": "فقط ادمین کانال می‌تونه لیست اعضا رو ببینه."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         members = channel.members.select_related("user", "user__user_profile")
         return Response(ChannelMemberSerializer(members, many=True, context={"request": request}).data)
 
@@ -87,4 +100,39 @@ class ChannelMessageViewSet(generics.ListAPIView):
         return ChannelMessage.objects.filter(
             channel_id=channel_id, channel__members__user=self.request.user
         ).select_related("sender")
+# ======================================================================================================================
+class ChannelMemberRoleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, channel_id, member_id):
+        channel = get_object_or_404(ChannelModels, id=channel_id)
+        my_membership = channel.members.filter(user=request.user).first()
+        if not my_membership or my_membership.role != "admin":
+            return Response({"detail": "فقط ادمین می‌تونه نقش اعضا رو تغییر بده."}, status=status.HTTP_403_FORBIDDEN)
+
+        target_member = get_object_or_404(ChannelMember, id=member_id, channel=channel)
+        if target_member.user == channel.owner:
+            return Response({"detail": "نقش مالک کانال قابل تغییر نیست."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = UpdateMemberRoleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target_member.role = serializer.validated_data["role"]
+        target_member.save(update_fields=["role"])
+        return Response(ChannelMemberSerializer(target_member, context={"request": request}).data)
+# ======================================================================================================================
+class ChannelMemberRemoveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, channel_id, member_id):
+        channel = get_object_or_404(ChannelModels, id=channel_id)
+        my_membership = channel.members.filter(user=request.user).first()
+        if not my_membership or my_membership.role != "admin":
+            return Response({"detail": "فقط ادمین می‌تونه عضو رو حذف کنه."}, status=status.HTTP_403_FORBIDDEN)
+
+        target_member = get_object_or_404(ChannelMember, id=member_id, channel=channel)
+        if target_member.user == channel.owner:
+            return Response({"detail": "مالک کانال قابل حذف نیست."}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_member.delete()
+        return Response({"detail": "عضو از چنل حذف شد."}, status=status.HTTP_200_OK)
 # ======================================================================================================================
