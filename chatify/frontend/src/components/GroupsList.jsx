@@ -3,6 +3,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { Trash2 } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
+import { useChannelStore } from "../store/useChannelStore"; // ✅ FIX: برای پاک کردن selectedChannel
 
 function GroupsList({ searchQuery = "" }) {
   const [groups, setGroups] = useState([]);
@@ -11,7 +12,9 @@ function GroupsList({ searchQuery = "" }) {
   const confirmTimerRef = useRef(null);
   const accessToken = localStorage.getItem("accessToken");
 
-  const { setSelectedGroup } = useChatStore();
+  const { setSelectedGroup, setSelectedUser } = useChatStore();
+  // ✅ FIX: لازم داریم تا موقع انتخاب گروه، چنل فعلی رو پاک کنیم
+  const { setSelectedChannel } = useChannelStore();
 
   useEffect(() => {
     const fetchGroups = async () => {
@@ -34,6 +37,14 @@ function GroupsList({ searchQuery = "" }) {
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
     };
   }, []);
+
+  // ✅ FIX: انتخاب گروه باید انتخاب فعلی چت خصوصی/چنل رو پاک کنه، وگرنه
+  // چند تا کانتینر همزمان روی هم رندر می‌شن
+  const handleSelectGroup = (group) => {
+    setSelectedUser(null);
+    setSelectedChannel(null);
+    setSelectedGroup(group);
+  };
 
   const handleDeleteClick = async (e, groupId) => {
     e.stopPropagation();
@@ -97,7 +108,7 @@ function GroupsList({ searchQuery = "" }) {
         return (
           <div
             key={g.id}
-            onClick={() => setSelectedGroup(g)}
+            onClick={() => handleSelectGroup(g)}
             className="group relative flex items-center gap-3 p-3 rounded-2xl cursor-pointer
                        bg-gradient-to-r from-slate-800/40 to-slate-800/10 border border-slate-700/40
                        hover:from-cyan-500/10 hover:to-blue-500/5 hover:border-cyan-500/30

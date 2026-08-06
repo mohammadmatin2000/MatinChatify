@@ -53,8 +53,13 @@ class ChannelMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChannelMessage
         fields = [
+            # ✅ FIX: "meta" اضافه شد — بدون این فیلد، پیام‌های لوکیشن/مخاطب/
+            # نظرسنجی موقع ریلود صفحه (که از این سریالایزر REST میان، نه از
+            # ChannelConsumer.WebSocket) کاملاً خالی نمایش داده می‌شدن، چون
+            # meta اصلاً توی جواب سرور نبود.
             "id", "channel", "sender", "sender_name", "message_type",
-            "text", "image", "file", "file_name", "created_date", "updated_date",
+            "text", "image", "file", "file_name", "meta",
+            "created_date", "updated_date",
         ]
         read_only_fields = ["sender", "channel"]
 

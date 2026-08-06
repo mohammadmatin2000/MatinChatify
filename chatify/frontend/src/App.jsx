@@ -10,10 +10,13 @@ import PageLoader from "./components/PageLoader";
 import {Toaster} from "react-hot-toast";
 import CallModal from "./components/CallModal";
 import GroupCallModal from "./components/GroupCallModal";
+import useClickSound from "./hooks/useClickSound";
 
 function App() {
     const {checkAuth, isCheckingAuth, authUser} = useAuthStore();
     const connectCallSocket = useCallStore((state) => state.connectCallSocket);
+
+    useClickSound();
 
     useEffect(() => {
         checkAuth();

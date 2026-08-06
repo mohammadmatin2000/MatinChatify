@@ -3,6 +3,7 @@ import {ImageIcon, CameraIcon, FileTextIcon, MapPinIcon, UserIcon, PlusIcon, Bar
 import {useChatStore} from "../store/useChatStore";
 import {createPortal} from "react-dom";
 import CameraCaptureModal from "./CameraCaptureModal";
+import toast from "react-hot-toast";
 
 const OPTIONS = [
     {key: "gallery", label: "عکس و ویدیو", icon: ImageIcon, color: "bg-purple-500"},
@@ -19,6 +20,9 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
     const [showCamera, setShowCamera] = useState(false);
     const [showPollModal, setShowPollModal] = useState(false); // ✅ NEW
     const [menuPos, setMenuPos] = useState({bottom: 0, right: 0});
+    // ✅ FIX: تا لوکیشن در حال گرفتنه، دکمه غیرفعال بشه و کاربر بفهمه
+    // داره یه کاری انجام میشه (قبلاً هیچ فیدبکی نبود، انگار هیچ اتفاقی نمی‌افتاد)
+    const [isLocating, setIsLocating] = useState(false);
     const menuRef = useRef(null);
     const buttonRef = useRef(null);
 
@@ -80,21 +84,62 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
         }
     };
 
+    // ✅ FIX: بازنویسی کامل گرفتن لوکیشن —
+    // ۱) timeout واقعی گذاشته شده (قبلاً نبود، پس اگه سیستم/مرورگر جواب
+    //    نمی‌داد، درخواست تا ابد معلق می‌موند و هیچ خطایی هم دیده نمی‌شد)
+    // ۲) پیام‌های خطای مشخص برای هر حالت (دسترسی رد شده / پیدا نشد / تایم‌اوت)
+    // ۳) اگه گرفتن دقیق (high accuracy) با تایم‌اوت مواجه شد، یه تلاش دوم با
+    //    enableHighAccuracy:false و maximumAge بالا انجام می‌ده — این حالت
+    //    برای دسکتاپ‌های بدون GPS واقعی (که موقعیت رو از Wi-Fi/IP حدس
+    //    می‌زنن) شانس موفقیت رو خیلی بالا می‌بره
+    // ۴) لودینگ روی دکمه نشون داده می‌شه تا کاربر بفهمه چیزی در حال انجامه
     const handleShareLocation = () => {
         if (!navigator.geolocation) {
-            alert("مرورگرت از لوکیشن پشتیبانی نمی‌کنه");
+            toast.error("مرورگرت از لوکیشن پشتیبانی نمی‌کنه");
             return;
         }
+        if (isLocating) return;
+
+        setIsLocating(true);
+        const loadingToast = toast.loading("در حال گرفتن موقعیت مکانی...");
+
+        const cleanup = () => {
+            setIsLocating(false);
+            toast.dismiss(loadingToast);
+        };
+
+        const onSuccess = (pos) => {
+            cleanup();
+            onSelectLocation({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+            });
+        };
+
+        const attemptLowAccuracy = () => {
+            navigator.geolocation.getCurrentPosition(
+                onSuccess,
+                (err) => {
+                    cleanup();
+                    toast.error(describeLocationError(err));
+                },
+                {enableHighAccuracy: false, timeout: 10000, maximumAge: 300000}
+            );
+        };
+
         navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                onSelectLocation({
-                    lat: pos.coords.latitude,
-                    lng: pos.coords.longitude,
-                });
+            onSuccess,
+            (err) => {
+                // ✅ اگه تلاش دقیق تایم‌اوت داد، یه بار دیگه با تنظیمات
+                // سازگارتر (بدون GPS دقیق، اجازه‌ی موقعیت کش‌شده) امتحان کن
+                if (err.code === err.TIMEOUT) {
+                    attemptLowAccuracy();
+                } else {
+                    cleanup();
+                    toast.error(describeLocationError(err));
+                }
             },
-            () => {
-                alert("دسترسی به لوکیشن رد شد یا امکان‌پذیر نبود");
-            }
+            {enableHighAccuracy: true, timeout: 6000, maximumAge: 0}
         );
     };
 
@@ -123,18 +168,22 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                         >
                             {OPTIONS.map((opt) => {
                                 const Icon = opt.icon;
+                                const isLocationBusy = opt.key === "location" && isLocating;
                                 return (
                                     <button
                                         key={opt.key}
                                         type="button"
+                                        disabled={isLocationBusy}
                                         onClick={() => handleOptionClick(opt.key)}
-                                        className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-700/50 transition-colors text-right"
+                                        className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-right"
                                     >
                                         <div
                                             className={`w-9 h-9 rounded-full ${opt.color} flex items-center justify-center flex-shrink-0`}>
                                             <Icon className="w-4.5 h-4.5 text-white"/>
                                         </div>
-                                        <span className="text-slate-200 text-sm">{opt.label}</span>
+                                        <span className="text-slate-200 text-sm">
+                                            {isLocationBusy ? "در حال گرفتن موقعیت..." : opt.label}
+                                        </span>
                                     </button>
                                 );
                             })}
@@ -237,6 +286,20 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
             )}
         </div>
     );
+}
+
+// ✅ FIX: پیام خطای مشخص برای هر کد خطای geolocation
+function describeLocationError(err) {
+    switch (err?.code) {
+        case err?.PERMISSION_DENIED:
+            return "دسترسی به لوکیشن رد شده. از تنظیمات مرورگر (کنار آدرس سایت) اجازه بده.";
+        case err?.POSITION_UNAVAILABLE:
+            return "موقعیت مکانی در دسترس نیست. مطمئن شو Location Services سیستم روشنه.";
+        case err?.TIMEOUT:
+            return "زمان گرفتن موقعیت تموم شد. دوباره امتحان کن یا Location Services سیستم رو چک کن.";
+        default:
+            return "دسترسی به لوکیشن ممکن نشد.";
+    }
 }
 
 function PollCreateModal({onClose, onCreate}) {

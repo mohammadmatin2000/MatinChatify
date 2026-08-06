@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
+import { useChannelStore } from "../store/useChannelStore"; // ✅ FIX: برای پاک کردن selectedChannel
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
@@ -72,11 +73,14 @@ function ChatsList({ searchQuery = "" }) {
     allContacts,
     isUsersLoading,
     setSelectedUser,
+    setSelectedGroup,
     onlineUsers,
     addMessageEventListener,
     deleteContact,
   } = useChatStore();
   const { authUser } = useAuthStore();
+  // ✅ FIX: لازم داریم تا موقع انتخاب کاربر، چنل فعلی رو پاک کنیم
+  const { setSelectedChannel } = useChannelStore();
   const [lastMessages, setLastMessages] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const confirmTimerRef = useRef(null);
@@ -188,6 +192,14 @@ function ChatsList({ searchQuery = "" }) {
     return unsubscribe;
   }, [authUser?.id, addMessageEventListener]);
 
+  // ✅ FIX: انتخاب کاربر باید انتخاب فعلی گروه/چنل رو پاک کنه، وگرنه
+  // چند تا کانتینر همزمان روی هم رندر می‌شن
+  const handleSelectUser = (contact) => {
+    setSelectedGroup(null);
+    setSelectedChannel(null);
+    setSelectedUser(contact);
+  };
+
   const handleDeleteClick = (e, contactRecordId) => {
     e.stopPropagation();
 
@@ -260,7 +272,7 @@ function ChatsList({ searchQuery = "" }) {
         return (
           <div
             key={contactId}
-            onClick={() => setSelectedUser(contact)}
+            onClick={() => handleSelectUser(contact)}
             style={{ animationDelay: `${idx * 30}ms` }}
             className="group relative flex items-center gap-3 p-3 rounded-2xl cursor-pointer
                        bg-gradient-to-br from-slate-800/60 via-slate-800/30 to-slate-800/10

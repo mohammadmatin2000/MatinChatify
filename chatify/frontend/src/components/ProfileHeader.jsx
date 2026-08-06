@@ -33,13 +33,14 @@ function ProfileHeader({onNewGroup}) {
         isSearching,
         searchUsers,
         clearSearch,
+        isSoundEnabled,
+        toggleSound,
     } = useChatStore();
 
     const {disconnectCallSocket} = useCallStore();
 
     const [profile, setProfile] = useState({first_name: "", image: "/avatar.png"});
     const [isEditingName, setIsEditingName] = useState(false);
-    const [isSoundEnabled, setIsSoundEnabled] = useState(true);
     const [selectedImg, setSelectedImg] = useState(null);
     const [showNewMenu, setShowNewMenu] = useState(false);
 
@@ -115,7 +116,7 @@ function ProfileHeader({onNewGroup}) {
             mouseClickSound.play();
         } catch {
         }
-        setIsSoundEnabled((prev) => !prev);
+        toggleSound();
     };
 
     const handleImageChange = async (e) => {
@@ -697,7 +698,7 @@ function ProfileHeader({onNewGroup}) {
             )}
 
             {/* مودال ساخت چنل */}
-            <CreateChannelModal isOpen={showCreateChannel} onClose={() => setShowCreateChannel(false)} />
+            <CreateChannelModal isOpen={showCreateChannel} onClose={() => setShowCreateChannel(false)}/>
         </div>
     );
 }

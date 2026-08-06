@@ -1,12 +1,15 @@
 import { useEffect, useState, useRef } from "react";
 import { Trash2, Radio, LogOut, LogIn } from "lucide-react";
 import { useChannelStore } from "../store/useChannelStore";
+import { useChatStore } from "../store/useChatStore"; // ✅ FIX: برای پاک کردن selectedUser/selectedGroup
 
 const API_BASE_URL = "http://localhost:8000";
 
 function ChannelsList({ searchQuery = "" }) {
   const { channels, getAllChannels, isChannelsLoading, setSelectedChannel, deleteChannel, leaveChannel, joinChannel } =
     useChannelStore();
+  // ✅ FIX: لازم داریم تا موقع انتخاب چنل، چت/گروه فعلی رو پاک کنیم
+  const { setSelectedUser, setSelectedGroup } = useChatStore();
 
   const [confirmId, setConfirmId] = useState(null);
   const confirmTimerRef = useRef(null);
@@ -36,6 +39,15 @@ function ChannelsList({ searchQuery = "" }) {
       setInviteCode("");
       setShowJoinForm(false);
     }
+  };
+
+  // ✅ FIX: انتخاب چنل باید انتخاب فعلی چت خصوصی/گروه رو پاک کنه، وگرنه
+  // چند تا کانتینر (ChatContainer/GroupChatContainer/ChannelChatContainer)
+  // همزمان روی هم رندر می‌شن
+  const handleSelectChannel = (channel) => {
+    setSelectedUser(null);
+    setSelectedGroup(null);
+    setSelectedChannel(channel);
   };
 
   if (isChannelsLoading) {
@@ -116,7 +128,7 @@ function ChannelsList({ searchQuery = "" }) {
         return (
           <div
             key={channel.id}
-            onClick={() => setSelectedChannel(channel)}
+            onClick={() => handleSelectChannel(channel)}
             className="group relative flex items-center gap-3 p-3 rounded-2xl cursor-pointer
                        bg-gradient-to-r from-slate-800/40 to-slate-800/10 border border-slate-700/40
                        hover:from-violet-500/10 hover:to-fuchsia-500/5 hover:border-violet-500/30

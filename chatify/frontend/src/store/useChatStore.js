@@ -42,6 +42,7 @@ export const useChatStore = create((set, get) => ({
     // ✅ NEW: پیام پین‌شده‌ی مکالمه‌ی خصوصی باز — بین دو طرف از طریق سوکت سینک می‌شه
     pinnedMessageId: null,
 
+
     // ---------------- 🌐 اتصال مرکزی وضعیت آنلاین ----------------
     connectOnlineStatusSocket: () => {
         if (
@@ -157,6 +158,15 @@ export const useChatStore = create((set, get) => ({
 
     // ---------------- ⚙️ UI Settings ----------------
     setActiveTab: (tab) => set({activeTab: tab}),
+
+    // ---------------- 🔊 Sound Toggle ----------------
+    toggleSound: () => {
+        set((state) => {
+            const next = !state.isSoundEnabled;
+            localStorage.setItem("isSoundEnabled", JSON.stringify(next));
+            return { isSoundEnabled: next };
+        });
+    },
 
     // ---------------- 👤 Selected User ----------------
     setSelectedUser: (user) => {
