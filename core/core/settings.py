@@ -36,7 +36,8 @@ INSTALLED_APPS = [
     "chat",
     "calls",
     "groups",
-    "chchannels"
+    "chchannels",
+    "settings",
 
 ]
 

@@ -1,9 +1,11 @@
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
+from rest_framework import generics
 from django.shortcuts import get_object_or_404
-from .models import ContactModels, ChatModels, MessageModels
-from .serializers import ContactSerializer, AddContactSerializer, ChatSerializer, MessageSerializer
+from .models import ContactModels, ChatModels, MessageModels,BlockModels,ReportModels
+from .serializers import ContactSerializer, AddContactSerializer, ChatSerializer, MessageSerializer,ReportSerializer,BlockSerializer
 from accounts.models import User
 from django.db.models import Q
 from rest_framework.views import APIView
@@ -43,7 +45,6 @@ class ContactViewSet(viewsets.ModelViewSet):
             ContactSerializer(contact, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
-
 # ======================================================================================================================
 class SearchUsersView(APIView):
     """چک کردن اینکه یه شماره/ایمیل توی چتیفای هست یا نه، قبل از سیو به‌عنوان مخاطب"""
@@ -99,7 +100,6 @@ class MessageViewSet(viewsets.ModelViewSet):
         receiver_id = self.kwargs.get('receiver')
         if not receiver_id:
             return MessageModels.objects.none()
-
         receiver = get_object_or_404(User, id=receiver_id)
         return MessageModels.objects.filter(
             Q(sender=user, receiver=receiver) | Q(sender=receiver, receiver=user)
@@ -108,5 +108,64 @@ class MessageViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         sender = self.request.user
         receiver = get_object_or_404(User, id=self.kwargs.get("receiver"))
+
+        if BlockModels.objects.filter(user=receiver, blocked_user=sender).exists():
+            raise DRFPermissionDenied("این کاربر شما را مسدود کرده است.")
+        if BlockModels.objects.filter(user=sender, blocked_user=receiver).exists():
+            raise DRFPermissionDenied("شما این کاربر را مسدود کرده‌اید.")
+
         serializer.save(sender=sender, receiver=receiver)
+# ======================================================================================================================
+class BlockViewSet(viewsets.ModelViewSet):
+    serializer_class = BlockSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "delete"]
+
+    def get_serializer_context(self):
+        return {"request": self.request}
+
+    def get_queryset(self):
+        return BlockModels.objects.filter(user=self.request.user).select_related(
+            "blocked_user", "blocked_user__user_profile"
+        )
+
+    def create(self, request, *args, **kwargs):
+        blocked_id = request.data.get("blocked_user")
+        if not blocked_id:
+            return Response({"detail": "کاربر مشخص نشده."}, status=400)
+        if int(blocked_id) == request.user.id:
+            return Response({"detail": "نمی‌تونی خودتو بلاک کنی."}, status=400)
+
+        blocked_user = get_object_or_404(User, id=blocked_id)
+        obj, created = BlockModels.objects.get_or_create(user=request.user, blocked_user=blocked_user)
+        return Response(
+            self.get_serializer(obj).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+# ======================================================================================================================
+class UnblockByUserView(APIView):
+    """DELETE /chat/blocks/unblock/<user_id>/"""
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, user_id):
+        deleted, _ = BlockModels.objects.filter(user=request.user, blocked_user_id=user_id).delete()
+        if not deleted:
+            return Response({"detail": "این کاربر بلاک نبود."}, status=404)
+        return Response(status=204)
+# ======================================================================================================================
+class BlockStatusView(APIView):
+    """GET /chat/blocks/status/<user_id>/"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        i_blocked_them = BlockModels.objects.filter(user=request.user, blocked_user_id=user_id).exists()
+        they_blocked_me = BlockModels.objects.filter(user_id=user_id, blocked_user=request.user).exists()
+        return Response({"i_blocked_them": i_blocked_them, "they_blocked_me": they_blocked_me})
+# ======================================================================================================================
+class ReportUserView(generics.CreateAPIView):
+    serializer_class = ReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(reporter=self.request.user)
 # ======================================================================================================================

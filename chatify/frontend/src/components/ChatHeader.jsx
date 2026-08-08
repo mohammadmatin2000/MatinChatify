@@ -1,10 +1,11 @@
 import { XIcon, PhoneIcon, VideoIcon } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import { useCallStore } from "../store/useCallStore";
+import ChatHeaderMenu from "./ChatHeaderMenu";
 import { useEffect } from "react";
 
 function ChatHeader() {
-  const { selectedUser, setSelectedUser, onlineUsers } = useChatStore();
+  const { selectedUser, setSelectedUser, onlineUsers, blockStatus } = useChatStore();
   // ✅ NEW: برای شروع تماس صوتی/تصویری با همین مخاطب باز شده
   const { startCall, callStatus } = useCallStore();
 
@@ -34,8 +35,9 @@ function ChatHeader() {
     ? `http://localhost:8000${selectedUser.raw.profile}`
     : "/avatar.png";
 
-  // ✅ NEW: تماس فقط وقتی می‌شه شروع کرد که در حال حاضر توی تماس دیگه‌ای نباشیم
-  const canCall = callStatus === "idle";
+  // ✅ NEW: اگه هر کدوم از دو طرف دیگری رو بلاک کرده باشه، تماس غیرفعال می‌شه
+  const isBlockedEitherWay = blockStatus.iBlockedThem || blockStatus.theyBlockedMe;
+  const canCall = callStatus === "idle" && !isBlockedEitherWay;
 
   const handleAudioCall = () => {
     if (!canCall) return;
@@ -75,7 +77,16 @@ function ChatHeader() {
 
         <div>
           <h3 className="text-slate-100 font-medium">{selectedUser.name}</h3>
-          <p className="text-sm text-slate-400">{isOnline ? "آنلاین" : "آفلاین"}</p>
+          <p className="text-sm text-slate-400">
+            {/* ✅ NEW: اگه بلاک شده باشه، به‌جای آنلاین/آفلاین وضعیت بلاک نشون داده می‌شه */}
+            {blockStatus.iBlockedThem
+              ? "مسدود شده"
+              : blockStatus.theyBlockedMe
+              ? "امکان ارسال پیام نیست"
+              : isOnline
+              ? "آنلاین"
+              : "آفلاین"}
+          </p>
         </div>
       </div>
 
@@ -110,8 +121,11 @@ function ChatHeader() {
           <VideoIcon className="w-[18px] h-[18px] transition-transform duration-200 group-hover:scale-110" />
         </button>
 
-        {/* جداکننده‌ی ظریف بین دکمه‌های تماس و بستن */}
+        {/* جداکننده‌ی ظریف قبل از منوی بیشتر */}
         <span className="w-px h-6 bg-slate-700/60 mx-1" />
+
+        {/* ✅ NEW: منوی مسدودسازی/گزارش */}
+        <ChatHeaderMenu userId={selectedUser.id || selectedUser._id} userName={selectedUser.name} />
 
         <button
           onClick={() => setSelectedUser(null)}

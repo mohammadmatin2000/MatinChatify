@@ -1,6 +1,7 @@
 import { XIcon, MessageCircleIcon, UsersIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useChatStore } from "../store/useChatStore";
+import { useChannelStore } from "../store/useChannelStore"; // ✅ FIX: برای پاک کردن selectedChannel
 import toast from "react-hot-toast";
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -48,7 +49,9 @@ function sendToGroupViaTempSocket(groupId, payload) {
 
 // فوروارد پیام به یکی از مخاطبین چت خصوصی، یا یکی از گروه‌ها
 function ForwardMessageModal({ isOpen, onClose, message }) {
-  const { allContacts, getAllContacts, setSelectedUser } = useChatStore();
+  const { allContacts, getAllContacts, setSelectedUser, setSelectedGroup } = useChatStore();
+  // ✅ FIX: لازم داریم تا موقع سوییچ به مخاطب انتخابی، چنل فعلی رو پاک کنیم
+  const { setSelectedChannel } = useChannelStore();
   const [sendingId, setSendingId] = useState(null);
   const [activeTab, setActiveTab] = useState("contacts"); // "contacts" | "groups"
   const [groups, setGroups] = useState([]);
@@ -101,6 +104,12 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
     const contactId = contact._id || contact.id;
     setSendingId(contactId);
     try {
+      // ✅ FIX: قبل از سوییچ به این مخاطب، انتخاب فعلی گروه/چنل رو پاک
+      // می‌کنیم — وگرنه (مثلاً وقتی داخل یه چنل هستی و از اینجا فوروارد
+      // می‌کنی) selectedUser و selectedChannel هر دو با هم true می‌مونن و
+      // ChatPage هر دو کانتینر رو همزمان رندر می‌کنه (همون باگ «دو صفحه»)
+      setSelectedGroup(null);
+      setSelectedChannel(null);
       setSelectedUser(contact);
       const socket = await waitForSocket();
       if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -120,7 +129,9 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
     }
   };
 
-  // ✅ NEW: فوروارد به گروه — از سوکت موقت استفاده می‌کنه
+  // ✅ NEW: فوروارد به گروه — از سوکت موقت استفاده می‌کنه (این مسیر خودش
+  // selectedGroup/selectedChannel رو تغییر نمی‌ده، پس مشکل «دو صفحه» رو
+  // نداره — فقط handleForwardToContact این مشکل رو داشت)
   const handleForwardToGroup = async (group) => {
     const groupId = group.id;
     setSendingId(`group-${groupId}`);

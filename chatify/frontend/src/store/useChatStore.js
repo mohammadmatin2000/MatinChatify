@@ -41,6 +41,8 @@ export const useChatStore = create((set, get) => ({
     isSearching: false,
     // ✅ NEW: پیام پین‌شده‌ی مکالمه‌ی خصوصی باز — بین دو طرف از طریق سوکت سینک می‌شه
     pinnedMessageId: null,
+    // ✅ NEW: وضعیت بلاک مکالمه‌ی فعلاً باز — { iBlockedThem, theyBlockedMe }
+    blockStatus: {iBlockedThem: false, theyBlockedMe: false},
 
 
     // ---------------- 🌐 اتصال مرکزی وضعیت آنلاین ----------------
@@ -84,6 +86,19 @@ export const useChatStore = create((set, get) => ({
                 case "presence_update": {
                     if (data.online) get().addOnlineUser(String(data.userId));
                     else get().removeOnlineUser(String(data.userId));
+                    break;
+                }
+                // ✅ NEW: طرف مقابل (یا خودت از یه سشن دیگه) پیام‌هایی که فرستادی رو خونده
+                case "read_receipt": {
+                    const {messageIds = [], readerId} = data;
+                    const idSet = new Set(messageIds.map(String));
+                    set((state) => ({
+                        messages: state.messages.map((m) =>
+                            idSet.has(String(m._id)) || idSet.has(String(m.id))
+                                ? {...m, isRead: true}
+                                : m
+                        ),
+                    }));
                     break;
                 }
                 case "new_message_notify":
@@ -176,7 +191,7 @@ export const useChatStore = create((set, get) => ({
         get().unsubscribeFromMessages();
 
         if (!user) {
-            set({selectedUser: null, messages: []});
+            set({selectedUser: null, messages: [], blockStatus: {iBlockedThem: false, theyBlockedMe: false}});
             return;
         }
 
@@ -186,10 +201,18 @@ export const useChatStore = create((set, get) => ({
         user.name = user.name || `Contact ${user.raw?.contact || user._id}`;
         user.email = user.email || null;
 
-        set({selectedUser: user, selectedGroup: null, messages: [], pinnedMessageId: null});
+        set({
+            selectedUser: user,
+            selectedGroup: null,
+            messages: [],
+            pinnedMessageId: null,
+            blockStatus: {iBlockedThem: false, theyBlockedMe: false},
+        });
 
         get().getMessagesByUserId();
         get().subscribeToMessages(userId);
+        // ✅ NEW: وضعیت بلاک این مکالمه رو می‌گیریم
+        get().fetchBlockStatus(userId);
     },
 
     setSelectedGroup: (group) => {
@@ -202,7 +225,91 @@ export const useChatStore = create((set, get) => ({
         set({selectedUser: null, selectedGroup: null, messages: []});
     },
 
-    // ---------------- 📇 Contacts & Chats ----------------
+    // ---------------- 🚫 Block / Report (✅ NEW) ----------------
+    fetchBlockStatus: async (userId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token || !userId) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/blocks/status/${userId}/`, {
+                headers: {Authorization: `Bearer ${token}`},
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            set({
+                blockStatus: {
+                    iBlockedThem: !!data.i_blocked_them,
+                    theyBlockedMe: !!data.they_blocked_me,
+                },
+            });
+        } catch {
+            // وضعیت بلاک بحرانی نیست؛ اگه نگرفتیم پیش‌فرض (بلاک‌نشده) رو نگه می‌داریم
+        }
+    },
+
+    blockUser: async (userId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) {
+            toast.error("No access token found");
+            return false;
+        }
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/blocks/`, {
+                method: "POST",
+                headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+                body: JSON.stringify({blocked_user: userId}),
+            });
+            if (!res.ok) throw new Error();
+            set((state) => ({blockStatus: {...state.blockStatus, iBlockedThem: true}}));
+            toast.success("کاربر مسدود شد");
+            return true;
+        } catch {
+            toast.error("خطا در مسدود کردن کاربر");
+            return false;
+        }
+    },
+
+    unblockUser: async (userId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) {
+            toast.error("No access token found");
+            return false;
+        }
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/blocks/unblock/${userId}/`, {
+                method: "DELETE",
+                headers: {Authorization: `Bearer ${token}`},
+            });
+            if (!res.ok) throw new Error();
+            set((state) => ({blockStatus: {...state.blockStatus, iBlockedThem: false}}));
+            toast.success("مسدودیت برداشته شد");
+            return true;
+        } catch {
+            toast.error("خطا در رفع مسدودیت");
+            return false;
+        }
+    },
+
+    reportUser: async (userId, reason, description) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) {
+            toast.error("No access token found");
+            return false;
+        }
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/report/`, {
+                method: "POST",
+                headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+                body: JSON.stringify({reported_user: userId, reason, description}),
+            });
+            if (!res.ok) throw new Error();
+            toast.success("گزارش ثبت شد");
+            return true;
+        } catch {
+            toast.error("خطا در ثبت گزارش");
+            return false;
+        }
+    },
+
     // ---------------- 📇 Contacts & Chats ----------------
     getAllContacts: async () => {
         const token = localStorage.getItem("accessToken");
@@ -340,6 +447,8 @@ export const useChatStore = create((set, get) => ({
                 fileName: msg.file_name || msg.fileName || null,
                 messageType: msg.message_type || msg.messageType || "text",
                 meta: msg.meta || null,
+                // ✅ NEW: وضعیت خوانده‌شدن پیام (برای تیک آبی)
+                isRead: msg.is_read ?? msg.isRead ?? false,
                 // ✅ NEW: اگه بک‌اند این فیلد رو برگردونه، پیش‌نمایش ریپلای بعد از رفرش هم می‌مونه
                 replyTo: msg.replyTo || msg.reply_to || null,
                 createdAt: safeDate(msg.created_date || msg.createdAt),
@@ -356,9 +465,19 @@ export const useChatStore = create((set, get) => ({
     // ✅ sendMessage حالا یه payload کامل قبول می‌کنه:
     // { text, image (File|base64|null), file (File|base64|null), fileName, messageType, meta, replyTo }
     sendMessage: async (payload = {}) => {
-        const {selectedUser, messages, socket} = get();
+        const {selectedUser, messages, socket, blockStatus} = get();
         const {authUser} = useAuthStore.getState();
         if (!selectedUser || !authUser?.id) return toast.error("No selected user or auth user");
+
+        // ✅ NEW: قبل از هر چیز چک بلاک (سمت کلاینت — سرور هم دوباره چک می‌کنه)
+        if (blockStatus.iBlockedThem || blockStatus.theyBlockedMe) {
+            toast.error(
+                blockStatus.iBlockedThem
+                    ? "این کاربر را مسدود کرده‌اید — برای ارسال پیام مسدودیت را بردارید"
+                    : "امکان ارسال پیام به این کاربر وجود ندارد"
+            );
+            return;
+        }
 
         const senderId = authUser.id;
         const receiverId = selectedUser._id;
@@ -402,6 +521,7 @@ export const useChatStore = create((set, get) => ({
             messageType,
             meta,
             replyTo,
+            isRead: false,
             createdAt: safeDate(),
             isOptimistic: true,
         };
@@ -429,6 +549,14 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    // ✅ NEW: علامت‌گذاری پیام‌های دریافتی به‌عنوان خوانده‌شده (تیک آبی طرف مقابل)
+    markMessagesRead: (messageIds) => {
+        const {socket} = get();
+        const realIds = (messageIds || []).filter((id) => typeof id !== "string" || !id.startsWith("temp-"));
+        if (!realIds.length || !socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({type: "mark_read", messageIds: realIds}));
+    },
+
     // ---------------- 🧠 WebSocket چت (فقط برای مکالمه‌ی باز) ----------------
     subscribeToMessages: (roomName) => {
         if (!roomName) return;
@@ -446,6 +574,12 @@ export const useChatStore = create((set, get) => ({
                 if (!data) return;
 
                 if (data.type === "connection") return;
+
+                // ✅ NEW: خطاهایی مثل «بلاک هستید» از سرور اینجا نمایش داده می‌شن
+                if (data.type === "error") {
+                    if (data.error) toast.error(data.error);
+                    return;
+                }
 
                 if (data.type === "edit_message") {
                     const {messageId, newText} = data;
@@ -491,7 +625,9 @@ export const useChatStore = create((set, get) => ({
                             _id: msg.id || msg._id || msg.tempId,
                             messageType: msg.messageType || msg.message_type || "text",
                             fileName: msg.fileName || msg.file_name || null,
-                            // ✅ NEW: اگه سرور همون replyTo که فرستادیم رو برگردونه، اینجا حفظ می‌شه
+                            // ✅ NEW: وضعیت خوانده‌شدن (تازه ساخته شده، پس معمولاً false هست)
+                            isRead: msg.isRead ?? msg.is_read ?? false,
+                            // ✅ NEW: اگه بک‌اند همون replyTo که فرستادیم رو برگردونه، اینجا حفظ می‌شه
                             // ✅ FIX: اگه بک‌اند replyTo رو echo نکنه، از نسخه‌ی optimistic محلی
                             // (که قبلاً همین پیام رو با replyTo داشتیم) استفاده کن تا حداقل
                             // برای خودِ فرستنده پاک نشه
@@ -625,6 +761,7 @@ export const useChatStore = create((set, get) => ({
             socket: null,
             onlineUsers: [],
             searchResults: [],
+            blockStatus: {iBlockedThem: false, theyBlockedMe: false},
         });
     },
 }));

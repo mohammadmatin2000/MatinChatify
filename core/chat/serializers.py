@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ContactModels, ChatModels, MessageModels
+from .models import ContactModels, ChatModels, MessageModels,BlockModels,ReportModels
 from accounts.models import User, Profile
 from django.db.models import Q
 # ======================================================================================================================
@@ -87,7 +87,8 @@ class MessageSerializer(serializers.ModelSerializer):
         model = MessageModels
         fields = [
             'id', 'sender', 'receiver', 'message_type', 'text', 'image',
-            'file', 'file_name', 'meta', 'created_date', 'updated_date', 'last_message',
+            'file', 'file_name', 'meta', 'is_read', 'read_at',  # ✅ اضافه شد
+            'created_date', 'updated_date', 'last_message',
         ]
 
     def get_last_message(self, obj):
@@ -98,4 +99,34 @@ class MessageSerializer(serializers.ModelSerializer):
         if last_msg:
             return last_msg.text
         return None
+# ======================================================================================================================
+class BlockSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+    profile = serializers.SerializerMethodField()
+    email = serializers.EmailField(source="blocked_user.email", read_only=True)
+
+    class Meta:
+        model = BlockModels
+        fields = ["id", "blocked_user", "name", "email", "profile", "created_date"]
+        read_only_fields = ["id", "created_date"]
+
+    def get_name(self, obj):
+        profile = getattr(obj.blocked_user, "user_profile", None)
+        if profile and (profile.first_name or profile.last_name):
+            return profile.get_fullname()
+        return obj.blocked_user.email or obj.blocked_user.phone_number
+
+    def get_profile(self, obj):
+        profile = getattr(obj.blocked_user, "user_profile", None)
+        if profile and profile.image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(profile.image.url)
+        return None
+# ======================================================================================================================
+class ReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReportModels
+        fields = ["id", "reported_user", "reason", "description", "created_date"]
+        read_only_fields = ["id", "created_date"]
 # ======================================================================================================================

@@ -18,6 +18,7 @@ class ContactModels(models.Model):
     # اسمی که خودِ کاربر برای این مخاطب انتخاب کرده (مثل واتساب)
     display_name = models.CharField(max_length=255, blank=True, null=True)
 
+
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
 
@@ -107,6 +108,10 @@ class MessageModels(models.Model):
     # داده‌ی اضافی JSON برای پیام‌های خاص (مثل مختصات لوکیشن یا اطلاعات مخاطب ارسالی)
     meta = models.JSONField(null=True, blank=True)
 
+    # رسید خوانده‌شدن (تیک آبی)
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+
     # تاریخ ارسال پیام
     created_date = models.DateTimeField(auto_now_add=True)
 
@@ -116,4 +121,39 @@ class MessageModels(models.Model):
     # نمایش پیام (فرستنده → گیرنده)
     def __str__(self):
         return f"{self.sender.email} → {self.receiver.email}"
+# ======================================================================================================================
+# ======================================================================================================================
+# مدل بلاک کردن مخاطب (یک‌طرفه، مثل واتساب)
+class BlockModels(models.Model):
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="blocked_users"
+    )
+    blocked_user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="blocked_by_users"
+    )
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "blocked_user")
+
+    def __str__(self):
+        return f"{self.user} blocked {self.blocked_user}"
+# ======================================================================================================================
+# مدل گزارش کاربر
+class ReportModels(models.Model):
+    REASON_CHOICES = (
+        ("spam", "اسپم"),
+        ("harassment", "مزاحمت"),
+        ("fake_account", "اکانت جعلی"),
+        ("inappropriate", "محتوای نامناسب"),
+        ("other", "غیره"),
+    )
+    reporter = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reports_made")
+    reported_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reports_received")
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES, default="other")
+    description = models.TextField(blank=True, default="")
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Report: {self.reporter} -> {self.reported_user} ({self.reason})"
 # ======================================================================================================================

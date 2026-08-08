@@ -4,12 +4,13 @@ import { useChatStore } from "../store/useChatStore";
 import ChatHeader from "./ChatHeader";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import MessageInput from "./MessageInput";
+import MessageTicks from "./MessageTicks";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
 import MessageContextMenu from "./MessageContextMenu";
 import MessageInfoModal from "./MessageInfoModal";
 import ForwardMessageModal from "./ForwardMessageModal";
 import toast from "react-hot-toast";
-import { FileTextIcon, MapPinIcon, UserIcon, DownloadIcon, XIcon, Pin, Star, CheckIcon } from "lucide-react";
+import { FileTextIcon, MapPinIcon, UserIcon, DownloadIcon, XIcon, Pin, Star, CheckIcon, Ban } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000";
 
@@ -29,6 +30,9 @@ function ChatContainer() {
     pinnedMessageId,
     togglePinMessage,
     votePoll,
+    // ✅ NEW
+    blockStatus,
+    markMessagesRead,
   } = useChatStore();
 
   const { authUser } = useAuthStore();
@@ -70,7 +74,28 @@ function ChatContainer() {
     };
   }, []);
 
+  // ✅ NEW: هر وقت پیام‌های دریافتیِ خونده‌نشده روی صفحه ظاهر شدن، به سرور می‌گیم
+  // خونده شدن — همین باعث تیک آبی سمت فرستنده می‌شه
+  useEffect(() => {
+    if (!selectedUser || !authUser?.id) return;
+    const unreadIncomingIds = messages
+      .filter(
+        (m) =>
+          !m.isOptimistic &&
+          m.senderId !== null &&
+          String(m.receiverId) === String(authUser.id) &&
+          !m.isRead
+      )
+      .map((m) => m._id);
+
+    if (unreadIncomingIds.length > 0) {
+      markMessagesRead(unreadIncomingIds);
+    }
+  }, [messages, selectedUser, authUser?.id]);
+
   if (!selectedUser) return null;
+
+  const isBlockedEitherWay = blockStatus.iBlockedThem || blockStatus.theyBlockedMe;
 
   // -------------------------
   // ✅ NEW: ارسال پیام + تزریق replyTo (اگه در حال ریپلای بودیم)
@@ -108,9 +133,6 @@ function ChatContainer() {
     });
   };
 
-  // -------------------------
-  // ✅ NEW: ترجمه با یه سرویس عمومی — ممکنه به‌خاطر rate-limit شکست بخوره
-  // -------------------------
   // -------------------------
   // ✅ ترجمه با MyMemory (رایگان، بدون نیاز به API key) — جهت رو با
   // تشخیص حروف فارسی خودکار تعیین می‌کنه
@@ -356,6 +378,8 @@ function ChatContainer() {
               const isOwner = String(msg.senderId) === String(authUser?.id);
               const specialContent = renderMessageContent(msg);
               const senderName = isOwner ? authUser?.name || "شما" : selectedUser?.name;
+              // ✅ NEW: وضعیت تیک این پیام
+              const tickStatus = msg.isOptimistic ? "sending" : msg.isRead ? "read" : "sent";
 
               return (
                 <div key={msg._id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
@@ -420,6 +444,8 @@ function ChatContainer() {
                       {msg.createdAt instanceof Date
                         ? msg.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                         : "🕒"}
+                      {/* ✅ NEW: تیک وضعیت پیام (فقط برای پیام‌های خودت) */}
+                      <MessageTicks isOwn={isOwner} status={tickStatus} />
                     </p>
                   </div>
                 </div>
@@ -430,17 +456,27 @@ function ChatContainer() {
         )}
       </div>
 
-      <MessageInput
-        text={text}
-        setText={setText}
-        editingMessageId={editingMessageId}
-        editingText={editingText}
-        setEditingMessageId={setEditingMessageId}
-        setEditingText={setEditingText}
-        sendMessage={handleSendMessage}
-        replyTarget={replyTarget}
-        onCancelReply={() => setReplyTarget(null)}
-      />
+      {/* ✅ NEW: اگه یکی از دو طرف دیگری رو بلاک کرده، به‌جای اینپوت پیام یه نوار توضیحی نشون داده می‌شه */}
+      {isBlockedEitherWay ? (
+        <div className="border-t border-slate-700/50 bg-slate-800/60 px-6 py-4 flex items-center justify-center gap-2 text-sm text-slate-400">
+          <Ban className="w-4 h-4 flex-shrink-0" />
+          {blockStatus.iBlockedThem
+            ? "این کاربر را مسدود کرده‌اید. برای ارسال پیام، از منوی بالا مسدودیت را بردارید."
+            : "امکان ارسال پیام به این کاربر وجود ندارد."}
+        </div>
+      ) : (
+        <MessageInput
+          text={text}
+          setText={setText}
+          editingMessageId={editingMessageId}
+          editingText={editingText}
+          setEditingMessageId={setEditingMessageId}
+          setEditingText={setEditingText}
+          sendMessage={handleSendMessage}
+          replyTarget={replyTarget}
+          onCancelReply={() => setReplyTarget(null)}
+        />
+      )}
 
       {/* ✅ NEW: منوی کامل پیام + مودال‌های فوروارد و اطلاعات */}
       <MessageContextMenu

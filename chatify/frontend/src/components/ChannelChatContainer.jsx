@@ -249,9 +249,9 @@ function ChannelChatContainer({channel, onBack}) {
     // خاص کار می‌کنه)؛ حالا مستقیم مودال «فوروارد به...» رو باز می‌کنه تا لینک
     // به‌عنوان یه پیام واقعی به مخاطب/گروه انتخابی همینجا تو پیام‌رسان بره
     const handleShareInvite = () => {
-        if (!inviteLink) return;
-        setShareAsMessage({ text: inviteLink, messageType: "text" });
-    };
+    if (!channel?.invite_code) return;
+    setShareAsMessage({ text: channel.invite_code, messageType: "text" });
+};
 
     // ✅ NEW: تغییر وضعیت عمومی/خصوصی چنل — با PATCH به همون endpoint ویو‌ست چنل
     const handleToggleVisibility = async () => {

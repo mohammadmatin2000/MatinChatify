@@ -1,0 +1,65 @@
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
+from .models import UserSettings
+User = get_user_model()
+# ======================================================================================================================
+
+class UserSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserSettings
+        fields = [
+            "about_text",
+            "two_step_enabled",
+            "last_seen_visibility",
+            "photo_visibility",
+            "about_visibility",
+            "read_receipts",
+            "online_status_visible",
+            "notif_messages",
+            "notif_groups",
+            "notif_calls",
+            "notif_preview",
+            "notif_vibrate",
+            "sound_enabled",
+            "dark_theme",
+            "enter_to_send",
+            "font_size",
+            "auto_download_wifi",
+            "auto_download_mobile",
+            "language",
+            "updated_at",
+        ]
+        read_only_fields = ["updated_at"]
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
+
+    def validate_old_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("رمز عبور فعلی اشتباه است.")
+        return value
+
+    def save(self, **kwargs):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return user
+
+
+class DeleteAccountSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True)
+
+    def validate_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("رمز عبور اشتباه است.")
+        return value
+# ======================================================================================================================
