@@ -64,11 +64,8 @@ class GroupConsumer(AsyncWebsocketConsumer):
             await self.handle_edit_message(data)
         elif action == "delete_message":
             await self.handle_delete_message(data)
-        # ✅ NEW: پین/آن‌پین — فعلاً فقط real-time broadcast می‌شه، توی
-        # دیتابیس ذخیره نمی‌شه (چون مدل فیلد pinned نداره)
         elif action == "pin_message":
             await self.handle_pin_message(data)
-        # ✅ NEW: رأی دادن به نظرسنجی
         elif action == "vote_poll":
             await self.handle_vote_poll(data)
         # اکشن‌های ناشناخته سایلنت نادیده گرفته می‌شن
@@ -83,15 +80,12 @@ class GroupConsumer(AsyncWebsocketConsumer):
         file_base64 = data.get("file")
         file_name = data.get("fileName")
         meta = data.get("meta")
-        # ✅ NEW: { id, text, senderName } — فعلاً فقط pass-through می‌شه،
-        # توی دیتابیس ذخیره نمی‌شه (چون مدل فیلد reply_to نداره)
         reply_to = data.get("replyTo")
 
         if not text and not image_base64 and not file_base64 and not meta:
             return
 
-        # ✅ FIX: چک زنده‌ی عضویت به‌جای فلگ کش‌شده‌ی موقع connect — اگه کاربر
-        # بعد از وصل‌شدن سوکت به گروه اضافه شده باشه هم بازم می‌تونه بفرسته.
+        # ✅ چک زنده‌ی عضویت به‌جای فلگ کش‌شده‌ی موقع connect
         is_member_now = await self.is_member()
         self.is_member_flag = is_member_now
         if not is_member_now:
@@ -114,13 +108,31 @@ class GroupConsumer(AsyncWebsocketConsumer):
             await self.send_error("فایل ارسالی نامعتبر است")
             return
 
-        # ✅ NEW: از payload کلاینت گرفته می‌شه، نه از دیتابیس
         message_data["replyTo"] = reply_to
 
         await self.channel_layer.group_send(
             self.group_name,
             {"type": "chat_message", "message": message_data},
         )
+
+        # ✅ NEW: نوتیف مرکزی به تمام اعضای گروه (به‌جز خود فرستنده)
+        # برای دسکتاپ‌نوتیفیکیشن، دقیقاً هم‌ساختار با ChatConsumer
+        member_ids = await self.get_member_ids()
+        group_info = await self.get_group_info()
+        notify_payload = {
+            **message_data,
+            "chatType": "group",
+            "chatId": self.group_id,
+            "chatName": group_info["name"],
+            "senderName": self.serialize_user(self.user).get("email"),
+        }
+        for uid in member_ids:
+            if uid == self.user.id:
+                continue
+            await self.channel_layer.group_send(
+                f"user_{uid}",
+                {"type": "new_message_notify", "message": notify_payload},
+            )
 
     # -------------------------
     # ویرایش پیام (فقط نویسنده)
@@ -168,7 +180,7 @@ class GroupConsumer(AsyncWebsocketConsumer):
         )
 
     # -------------------------
-    # ✅ NEW: پین/آن‌پین پیام (هر عضو گروه می‌تونه — فقط real-time، ذخیره نمی‌شه)
+    # پین/آن‌پین پیام (هر عضو گروه می‌تونه — فقط real-time، ذخیره نمی‌شه)
     # -------------------------
     async def handle_pin_message(self, data):
         message_id = data.get("messageId")
@@ -186,7 +198,7 @@ class GroupConsumer(AsyncWebsocketConsumer):
         )
 
     # -------------------------
-    # ✅ NEW: رأی دادن به نظرسنجی
+    # رأی دادن به نظرسنجی
     # -------------------------
     async def handle_vote_poll(self, data):
         message_id = data.get("messageId")
@@ -254,6 +266,19 @@ class GroupConsumer(AsyncWebsocketConsumer):
     def is_member(self):
         return GroupMember.objects.filter(user=self.user, group_id=self.group_id).exists()
 
+    # ✅ NEW: لیست user_id تمام اعضای گروه (برای فن‌اوت نوتیف)
+    @database_sync_to_async
+    def get_member_ids(self):
+        return list(
+            GroupMember.objects.filter(group_id=self.group_id).values_list("user_id", flat=True)
+        )
+
+    # ✅ NEW: اسم گروه، برای عنوان نوتیف
+    @database_sync_to_async
+    def get_group_info(self):
+        group = Group.objects.get(id=self.group_id)
+        return {"name": group.name}
+
     @database_sync_to_async
     def save_message(self, text, message_type="text", image_base64=None, file_base64=None, file_name=None, meta=None):
         group = Group.objects.get(id=self.group_id)
@@ -270,7 +295,6 @@ class GroupConsumer(AsyncWebsocketConsumer):
             ext = (file_name.split(".")[-1] if file_name and "." in file_name else "bin")
             doc_file = ContentFile(base64.b64decode(filestr), name=f"{uuid.uuid4()}.{ext}")
 
-        # ✅ NEW: برای پیام‌های poll، به هر آپشن یه id بده و لیست voters خالی بساز
         if message_type == "poll" and meta and "options" in meta:
             meta = {
                 "question": meta.get("question", ""),
@@ -312,7 +336,6 @@ class GroupConsumer(AsyncWebsocketConsumer):
         message.text = ""
         message.save(update_fields=["is_deleted", "text", "updated_date"])
 
-    # ✅ NEW: رأی دادن به نظرسنجی
     @database_sync_to_async
     def vote_poll(self, message_id, option_id):
         try:

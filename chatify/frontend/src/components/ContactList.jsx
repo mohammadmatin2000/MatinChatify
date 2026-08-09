@@ -2,10 +2,12 @@ import { useEffect, useState, useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
+import useTranslation from "../hooks/useTranslation";
 
 function ContactList({ searchQuery = "" }) {
   const { getAllContacts, allContacts, setSelectedUser, isUsersLoading, onlineUsers, deleteContact } =
     useChatStore();
+  const { t } = useTranslation();
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const confirmTimerRef = useRef(null);
@@ -39,7 +41,6 @@ function ContactList({ searchQuery = "" }) {
 
   if (isUsersLoading) return <UsersLoadingSkeleton />;
 
-  // ✅ فیلتر بر اساس سرچ (اسم یا ایمیل)
   const q = searchQuery.trim().toLowerCase();
   const filteredContacts = q
     ? allContacts.filter((contact) => {
@@ -52,13 +53,11 @@ function ContactList({ searchQuery = "" }) {
   return (
     <div className="flex flex-col gap-1.5 px-1 h-full overflow-y-auto">
       {allContacts.length === 0 && (
-        <p className="text-center text-slate-500 text-sm py-6">
-          هنوز مخاطبی ندارید. از دکمه‌ی «+» بالا مخاطب جدید اضافه کنید.
-        </p>
+        <p className="text-center text-slate-500 text-sm py-6">{t("contactList.empty")}</p>
       )}
 
       {allContacts.length > 0 && filteredContacts.length === 0 && (
-        <p className="text-center text-slate-500 text-sm py-8">چیزی با این عبارت پیدا نشد</p>
+        <p className="text-center text-slate-500 text-sm py-8">{t("common.noResults")}</p>
       )}
 
       {filteredContacts.map((contact, idx) => {
@@ -80,7 +79,7 @@ function ContactList({ searchQuery = "" }) {
           (contact.first_name || contact.last_name
             ? `${contact.first_name || ""} ${contact.last_name || ""}`.trim()
             : contact.email?.split("@")[0]) ||
-          "کاربر ناشناخته";
+          t("common.unknownUser");
 
         return (
           <div
@@ -116,7 +115,7 @@ function ContactList({ searchQuery = "" }) {
                   isOnline ? "text-green-400" : "text-slate-500"
                 } group-hover:opacity-0`}
               >
-                {isOnline ? "آنلاین" : "آفلاین"}
+                {isOnline ? t("common.online") : t("common.offline")}
               </p>
             </div>
 
@@ -128,10 +127,10 @@ function ContactList({ searchQuery = "" }) {
                     ? "bg-red-500 text-white w-16 h-8 opacity-100"
                     : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
                 }`}
-                title={isConfirming ? "تایید حذف" : "حذف مخاطب"}
+                title={isConfirming ? t("contactList.deleteConfirm") : t("contactList.deleteTitle")}
               >
                 {isConfirming ? (
-                  <span className="text-xs font-medium">مطمئنی؟</span>
+                  <span className="text-xs font-medium">{t("common.confirm")}</span>
                 ) : (
                   <Trash2 className="w-4 h-4" />
                 )}

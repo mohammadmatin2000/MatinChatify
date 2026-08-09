@@ -3,12 +3,12 @@ import uuid
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from asgiref.sync import sync_to_async
 from django.utils.timezone import now
 from django.core.files.base import ContentFile
 from django.db.models import Q
 from chat.models import MessageModels, ContactModels, BlockModels
 from accounts.models import User
+
 # ======================================================================================================================
 online_users_list = set()
 # ======================================================================================================================
@@ -433,7 +433,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return updated_ids, sender_ids
 # ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
-
     online_users = {}
 
     async def connect(self):
@@ -459,17 +458,41 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             await self.broadcast_presence(True)
 
     async def disconnect(self, code):
-        if hasattr(self, "group_name"):
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
-        if not hasattr(self, "user_id") or self.user_id not in self.online_users:
+        if self.user_id not in self.online_users:
             return
 
         self.online_users[self.user_id] -= 1
 
         if self.online_users[self.user_id] <= 0:
             del self.online_users[self.user_id]
+            # ✅ NEW: ذخیره‌ی آخرین بازدید
+            await self.update_last_seen()
             await self.broadcast_presence(False)
+
+    # ... بقیه‌ی متدها بدون تغییر ...
+
+    @database_sync_to_async
+    def update_last_seen(self):
+        User.objects.filter(id=self.user_id).update(last_seen=now())
+
+    @database_sync_to_async
+    def get_contacts(self):
+        contacts = ContactModels.objects.filter(user=self.user).select_related("contact", "contact__user_profile")
+        result = []
+        for item in contacts:
+            profile = item.contact.user_profile
+            result.append({
+                "id": item.contact.id,
+                "email": item.contact.email,
+                "name": profile.get_fullname(),
+                "image": profile.image.url if profile.image else None,
+                "online": item.contact.id in self.online_users,
+                # ✅ NEW: آخرین بازدید (فقط وقتی آفلاینه معنا داره)
+                "last_seen": item.contact.last_seen.isoformat() if item.contact.last_seen else None,
+            })
+        return result
 
     async def receive(self, text_data):
         try:

@@ -1,4 +1,7 @@
+import useTranslation from "../hooks/useTranslation";
+
 function UsersLoadingSkeleton() {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       {[1, 2, 3].map((item) => (
@@ -12,7 +15,7 @@ function UsersLoadingSkeleton() {
           </div>
         </div>
       ))}
-      <p className="text-slate-400 text-sm text-center mt-2">در حال بارگذاری کاربران...</p>
+      <p className="text-slate-400 text-sm text-center mt-2">{t("loading.users")}</p>
     </div>
   );
 }

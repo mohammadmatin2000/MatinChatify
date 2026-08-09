@@ -1,20 +1,20 @@
 import { useEffect, useState, useRef } from "react";
 import { Trash2, Radio, LogOut, LogIn } from "lucide-react";
 import { useChannelStore } from "../store/useChannelStore";
-import { useChatStore } from "../store/useChatStore"; // ✅ FIX: برای پاک کردن selectedUser/selectedGroup
+import { useChatStore } from "../store/useChatStore";
+import useTranslation from "../hooks/useTranslation";
 
 const API_BASE_URL = "http://localhost:8000";
 
 function ChannelsList({ searchQuery = "" }) {
   const { channels, getAllChannels, isChannelsLoading, setSelectedChannel, deleteChannel, leaveChannel, joinChannel } =
     useChannelStore();
-  // ✅ FIX: لازم داریم تا موقع انتخاب چنل، چت/گروه فعلی رو پاک کنیم
   const { setSelectedUser, setSelectedGroup } = useChatStore();
+  const { t } = useTranslation();
 
   const [confirmId, setConfirmId] = useState(null);
   const confirmTimerRef = useRef(null);
 
-  // ---- فرم جوین با کد دعوت ----
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [isJoining, setIsJoining] = useState(false);
@@ -41,9 +41,6 @@ function ChannelsList({ searchQuery = "" }) {
     }
   };
 
-  // ✅ FIX: انتخاب چنل باید انتخاب فعلی چت خصوصی/گروه رو پاک کنه، وگرنه
-  // چند تا کانتینر (ChatContainer/GroupChatContainer/ChannelChatContainer)
-  // همزمان روی هم رندر می‌شن
   const handleSelectChannel = (channel) => {
     setSelectedUser(null);
     setSelectedGroup(null);
@@ -51,7 +48,7 @@ function ChannelsList({ searchQuery = "" }) {
   };
 
   if (isChannelsLoading) {
-    return <div className="flex justify-center items-center py-8 text-slate-400 animate-pulse">در حال بارگذاری چنل‌ها...</div>;
+    return <div className="flex justify-center items-center py-8 text-slate-400 animate-pulse">{t("channelsList.loading")}</div>;
   }
 
   const q = searchQuery.trim().toLowerCase();
@@ -59,14 +56,13 @@ function ChannelsList({ searchQuery = "" }) {
 
   return (
     <div className="flex flex-col gap-1.5 px-1">
-      {/* دکمه‌ی جوین با کد دعوت */}
       <button
         onClick={() => setShowJoinForm((v) => !v)}
         className="flex items-center gap-2 p-2.5 rounded-xl text-violet-400 text-sm font-medium
                    border border-dashed border-violet-500/30 hover:bg-violet-500/10 transition-colors"
       >
         <LogIn className="w-4 h-4" />
-        پیوستن با کد دعوت
+        {t("channelsList.joinWithCode")}
       </button>
 
       {showJoinForm && (
@@ -76,7 +72,7 @@ function ChannelsList({ searchQuery = "" }) {
             type="text"
             value={inviteCode}
             onChange={(e) => setInviteCode(e.target.value)}
-            placeholder="کد دعوت چنل رو وارد کن..."
+            placeholder={t("channelsList.joinCodePlaceholder")}
             dir="ltr"
             className="flex-1 bg-slate-900/60 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none placeholder:text-slate-500"
           />
@@ -85,17 +81,17 @@ function ChannelsList({ searchQuery = "" }) {
             disabled={isJoining || !inviteCode.trim()}
             className="bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs px-3 rounded-lg transition-colors"
           >
-            {isJoining ? "..." : "جوین"}
+            {isJoining ? t("channelsList.joining") : t("channelsList.joinBtn")}
           </button>
         </form>
       )}
 
       {channels.length === 0 && (
-        <p className="text-center text-slate-500 text-sm py-6">هنوز عضو هیچ چنلی نیستی.</p>
+        <p className="text-center text-slate-500 text-sm py-6">{t("channelsList.empty")}</p>
       )}
 
       {channels.length > 0 && filtered.length === 0 && (
-        <div className="text-center py-8 text-slate-400 text-sm">چیزی با این عبارت پیدا نشد</div>
+        <div className="text-center py-8 text-slate-400 text-sm">{t("common.noResults")}</div>
       )}
 
       {filtered.map((channel) => {
@@ -148,8 +144,8 @@ function ChannelsList({ searchQuery = "" }) {
                 <Radio className="w-3 h-3 text-violet-400 flex-shrink-0" />
               </div>
               <p className="text-slate-400 text-xs truncate transition-opacity group-hover:opacity-0">
-                {channel.members_count === 0 ? "بدون عضو" : `${channel.members_count} عضو`}
-                {channel.is_public ? " · عمومی" : " · خصوصی"}
+                {channel.members_count === 0 ? t("channelsList.noMembers") : t("channelsList.membersCount", { count: channel.members_count })}
+                {" · "}{channel.is_public ? t("channelsList.public") : t("channelsList.private")}
               </p>
             </div>
 
@@ -160,10 +156,10 @@ function ChannelsList({ searchQuery = "" }) {
                   ? "bg-red-500 text-white w-16 h-8 opacity-100"
                   : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
               }`}
-              title={isConfirming ? "تایید" : isOwner ? "حذف چنل" : "خروج از چنل"}
+              title={isConfirming ? t("common.confirm") : isOwner ? t("channelsList.deleteTitle") : t("channelsList.leaveTitle")}
             >
               {isConfirming ? (
-                <span className="text-xs font-medium">مطمئنی؟</span>
+                <span className="text-xs font-medium">{t("common.confirm")}</span>
               ) : isOwner ? (
                 <Trash2 className="w-4 h-4" />
               ) : (

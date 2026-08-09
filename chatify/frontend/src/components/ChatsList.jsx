@@ -4,17 +4,20 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useChannelStore } from "../store/useChannelStore"; // ✅ FIX: برای پاک کردن selectedChannel
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
+import useTranslation from "../hooks/useTranslation";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
-import { faIR } from "date-fns/locale";
+import { faIR, enUS, de } from "date-fns/locale";
 import { ImageIcon, Trash2, Paperclip, MapPin, User as UserIcon, Phone } from "lucide-react";
 import axios from "axios";
 
-function formatLastMessageTime(date) {
+const DATE_LOCALES = { fa: faIR, en: enUS, de };
+
+function formatLastMessageTime(date, locale) {
   if (!date) return "";
   if (isToday(date)) {
     return format(date, "HH:mm");
   }
-  return formatDistanceToNowStrict(date, { addSuffix: true, locale: faIR });
+  return formatDistanceToNowStrict(date, { addSuffix: true, locale });
 }
 
 // شکل واقعی پیام توی useChatStore: { text, image, file, fileName, messageType, meta, createdAt }
@@ -40,30 +43,27 @@ function normalizeMessage(raw) {
 }
 
 // برچسب و آیکون preview رو بر اساس messageType تعیین می‌کنه.
-// نوع‌هایی که دقیقاً نمی‌دونیم اسمشون چیه (مثلاً اشتراک مخاطب یا تماس تصویری) روی
-// یه fallback عمومی می‌افتن، نه روی «هنوز پیامی ارسال نشده» — چون پیام واقعاً وجود داره.
-function getPreview(msg) {
-  if (!msg) return { text: "هنوز پیامی ارسال نشده", Icon: null, isPlaceholder: true };
-  if (msg.deleted) return { text: "این پیام حذف شد", Icon: null, isPlaceholder: false };
+function getPreview(msg, t) {
+  if (!msg) return { text: t("chatsList.noMessagesYet"), Icon: null, isPlaceholder: true };
+  if (msg.deleted) return { text: t("chatsList.deleted"), Icon: null, isPlaceholder: false };
   if (msg.text?.trim()) return { text: msg.text, Icon: null, isPlaceholder: false };
 
   switch (msg.messageType) {
     case "image":
-      return { text: "عکس", Icon: ImageIcon, isPlaceholder: false };
+      return { text: t("chatsList.image"), Icon: ImageIcon, isPlaceholder: false };
     case "file":
-      return { text: msg.fileName || "فایل", Icon: Paperclip, isPlaceholder: false };
+      return { text: msg.fileName || t("chatsList.file"), Icon: Paperclip, isPlaceholder: false };
     case "location":
-      return { text: "موقعیت مکانی", Icon: MapPin, isPlaceholder: false };
+      return { text: t("chatsList.location"), Icon: MapPin, isPlaceholder: false };
     case "contact":
-      return { text: "اشتراک مخاطب", Icon: UserIcon, isPlaceholder: false };
+      return { text: t("chatsList.contact"), Icon: UserIcon, isPlaceholder: false };
     case "call":
     case "video_call":
-      return { text: "تماس تصویری", Icon: Phone, isPlaceholder: false };
+      return { text: t("chatsList.videoCall"), Icon: Phone, isPlaceholder: false };
     default:
-      if (msg.image) return { text: "عکس", Icon: ImageIcon, isPlaceholder: false };
-      if (msg.file) return { text: msg.fileName || "فایل", Icon: Paperclip, isPlaceholder: false };
-      // نوع ناشناخته ولی پیام وجود داره — دروغ نگیم که خالیه
-      return { text: "پیام", Icon: Paperclip, isPlaceholder: false };
+      if (msg.image) return { text: t("chatsList.image"), Icon: ImageIcon, isPlaceholder: false };
+      if (msg.file) return { text: msg.fileName || t("chatsList.file"), Icon: Paperclip, isPlaceholder: false };
+      return { text: t("chatsList.message"), Icon: Paperclip, isPlaceholder: false };
   }
 }
 
@@ -79,13 +79,14 @@ function ChatsList({ searchQuery = "" }) {
     deleteContact,
   } = useChatStore();
   const { authUser } = useAuthStore();
-  // ✅ FIX: لازم داریم تا موقع انتخاب کاربر، چنل فعلی رو پاک کنیم
   const { setSelectedChannel } = useChannelStore();
+  const { t, language } = useTranslation();
+  const dateLocale = DATE_LOCALES[language] || faIR;
+
   const [lastMessages, setLastMessages] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const confirmTimerRef = useRef(null);
 
-  // ========================== دریافت لیست مخاطبین ==========================
   useEffect(() => {
     getAllContacts();
   }, [getAllContacts]);
@@ -96,14 +97,12 @@ function ChatsList({ searchQuery = "" }) {
     };
   }, []);
 
-  // ========================== دریافت آخرین پیام‌ها (بار اول / fallback) ==========================
   const fetchLastMessage = async (contactId) => {
     try {
       const token = localStorage.getItem("accessToken");
       const res = await axios.get(`http://localhost:8000/chat/messages/${contactId}/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      // بعضی از API ها جدیدترین رو اول می‌فرستن، بعضی آخر؛ هر دو حالت رو پوشش می‌دیم
       const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
       if (list.length === 0) return;
 
@@ -131,7 +130,6 @@ function ChatsList({ searchQuery = "" }) {
     });
   }, [allContacts]);
 
-  // ========================== گوش دادن به رویدادهای پیام از اتصال مرکزی ==========================
   useEffect(() => {
     if (!authUser?.id) return;
 
@@ -192,8 +190,6 @@ function ChatsList({ searchQuery = "" }) {
     return unsubscribe;
   }, [authUser?.id, addMessageEventListener]);
 
-  // ✅ FIX: انتخاب کاربر باید انتخاب فعلی گروه/چنل رو پاک کنه، وگرنه
-  // چند تا کانتینر همزمان روی هم رندر می‌شن
   const handleSelectUser = (contact) => {
     setSelectedGroup(null);
     setSelectedChannel(null);
@@ -220,7 +216,6 @@ function ChatsList({ searchQuery = "" }) {
   if (isUsersLoading) return <UsersLoadingSkeleton />;
   if (!allContacts || allContacts.length === 0) return <NoChatsFound />;
 
-  // فیلتر بر اساس سرچ (اسم یا ایمیل)
   const q = searchQuery.trim().toLowerCase();
   const filteredContacts = q
     ? allContacts.filter((contact) => {
@@ -233,7 +228,7 @@ function ChatsList({ searchQuery = "" }) {
   if (filteredContacts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
-        <p className="text-slate-400 text-sm">چیزی با این عبارت پیدا نشد</p>
+        <p className="text-slate-400 text-sm">{t("common.noResults")}</p>
       </div>
     );
   }
@@ -248,10 +243,10 @@ function ChatsList({ searchQuery = "" }) {
         const isConfirming = confirmDeleteId === contactRecordId;
 
         const lastMessageObj = lastMessages[contactId];
-        const { text: previewText, Icon: PreviewIcon, isPlaceholder } = getPreview(lastMessageObj);
+        const { text: previewText, Icon: PreviewIcon, isPlaceholder } = getPreview(lastMessageObj, t);
 
         const lastMessageDate = lastMessageObj?.createdAt ? new Date(lastMessageObj.createdAt) : null;
-        const timeLabel = formatLastMessageTime(lastMessageDate);
+        const timeLabel = formatLastMessageTime(lastMessageDate, dateLocale);
         const isOnline = onlineUsers.some((id) => String(id) === String(contactId));
 
         const displayName =
@@ -259,7 +254,7 @@ function ChatsList({ searchQuery = "" }) {
           (contact.first_name || contact.last_name
             ? `${contact.first_name || ""} ${contact.last_name || ""}`.trim()
             : contact.email?.split("@")[0]) ||
-          "کاربر ناشناس";
+          t("common.unknownUser");
 
         const profilePicUrl = contact.profile?.startsWith("http")
           ? contact.profile
@@ -335,7 +330,6 @@ function ChatsList({ searchQuery = "" }) {
               </div>
             </div>
 
-            {/* دکمه‌ی حذف — فقط موقع hover دیده می‌شه */}
             {contactRecordId && (
               <button
                 onClick={(e) => handleDeleteClick(e, contactRecordId)}
@@ -344,10 +338,10 @@ function ChatsList({ searchQuery = "" }) {
                     ? "bg-red-500 text-white w-16 h-8 opacity-100 shadow-lg shadow-red-500/30"
                     : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
                 }`}
-                title={isConfirming ? "تایید حذف" : "حذف گفتگو"}
+                title={isConfirming ? t("contactList.deleteConfirm") : t("chatsList.deleteChatTitle")}
               >
                 {isConfirming ? (
-                  <span className="text-xs font-medium">مطمئنی؟</span>
+                  <span className="text-xs font-medium">{t("common.confirm")}</span>
                 ) : (
                   <Trash2 className="w-4 h-4" />
                 )}

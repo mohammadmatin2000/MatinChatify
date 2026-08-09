@@ -1,15 +1,17 @@
 import { useChatStore } from "../store/useChatStore";
 import { MessageCircle, Contact, Users, Phone, Radio } from "lucide-react";
+import useTranslation from "../hooks/useTranslation";
 
 function ActiveTabSwitch() {
   const { activeTab, setActiveTab } = useChatStore();
+  const { t } = useTranslation();
 
   const tabs = [
-    { key: "chats", label: "گفتگوها", icon: MessageCircle },
-    { key: "contacts", label: "مخاطبین", icon: Contact },
-    { key: "groups", label: "گروه‌ها", icon: Users },
-    { key: "channels", label: "چنل‌ها", icon: Radio },
-    { key: "calls", label: "تماس‌ها", icon: Phone },
+    { key: "chats", label: t("tabs.chats"), icon: MessageCircle },
+    { key: "contacts", label: t("tabs.contacts"), icon: Contact },
+    { key: "groups", label: t("tabs.groups"), icon: Users },
+    { key: "channels", label: t("tabs.channels"), icon: Radio },
+    { key: "calls", label: t("tabs.calls"), icon: Phone },
   ];
 
   return (
@@ -40,7 +42,6 @@ function ActiveTabSwitch() {
               {tab.label}
             </span>
 
-            {/* نقطه‌ی کوچیک زیر تب فعال، شبیه ایندیکیتور واتساپ */}
             {isActive && (
               <span className="absolute -bottom-0.5 w-1 h-1 rounded-full bg-cyan-400" />
             )}

@@ -4,7 +4,6 @@ from rest_framework import serializers
 from .models import UserSettings
 User = get_user_model()
 # ======================================================================================================================
-
 class UserSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserSettings
@@ -25,14 +24,15 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             "dark_theme",
             "enter_to_send",
             "font_size",
+            "chat_wallpaper",
+            "last_backup_date",
             "auto_download_wifi",
             "auto_download_mobile",
             "language",
-            "updated_at",
+            "updated_date",
         ]
-        read_only_fields = ["updated_at"]
-
-
+        read_only_fields = ["updated_date", "last_backup_date"]
+# ======================================================================================================================
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
@@ -52,8 +52,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data["new_password"])
         user.save(update_fields=["password"])
         return user
-
-
+# ======================================================================================================================
 class DeleteAccountSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 

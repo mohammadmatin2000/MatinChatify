@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
+import { useSettingsStore } from "../store/useSettingsStore"; // ✅ NEW
 import { SendIcon, XIcon, FileTextIcon } from "lucide-react";
 import useKeyboardSound from "../hooks/useKeyboardSound";
 import AttachMenu from "./AttachMenu";
@@ -27,6 +28,8 @@ export default function MessageInput({
 
   const { sendMessage: storeSendMessage, editMessage: storeEditMessage, isSoundEnabled } = useChatStore();
   const doEditMessage = editMessageProp || storeEditMessage;
+  // ✅ NEW: تنظیم «ارسال با Enter» از مودال تنظیمات
+  const enterToSend = useSettingsStore((state) => state.enterToSend);
 
   useEffect(() => {
     if (editingMessageId) {
@@ -83,6 +86,14 @@ export default function MessageInput({
 
     dispatchSend(payload);
     resetAttachments();
+  };
+
+  // ✅ NEW: وقتی «ارسال با Enter» خاموشه، جلوی submit شدن فرم با Enter رو
+  // می‌گیریم — کاربر مجبوره روی دکمه‌ی ارسال کلیک کنه
+  const handleInputKeyDown = (e) => {
+    if (e.key === "Enter" && !enterToSend) {
+      e.preventDefault();
+    }
   };
 
   // ---- ارسال مستقیم از منوی + (بدون نیاز به دکمه‌ی ارسال، مثل لوکیشن/مخاطب/نظرسنجی) ----
@@ -177,6 +188,7 @@ export default function MessageInput({
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleInputKeyDown}
           placeholder="پیام خود را بنویسید"
           className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4"
         />
@@ -199,10 +211,6 @@ export default function MessageInput({
           }
         />
 
-        {/* ✅ FIX: قبلاً دکمه‌ی ارسال و ضبط صدا/ویدیو جای هم رو می‌گرفتن (یکی
-            نبود اون یکی می‌اومد). حالا هر دو همیشه با هم دیده می‌شن — دقیقاً
-            مثل واتساب: میکروفون همیشه هست، دکمه‌ی ارسال هم همیشه هست (فقط
-            وقتی چیزی برای ارسال نیست غیرفعاله) */}
         <VoiceRecorder onSend={handleVoiceSend} />
 
         <button

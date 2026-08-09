@@ -34,11 +34,22 @@ import {
     KeyRound,
     ChevronDown,
     Loader2,
+    ExternalLink,
+    Send as TelegramIcon,
+    Github,
+    Heart,
+    Copy,
+    SparklesIcon,
 } from "lucide-react";
 import {useChatStore} from "../store/useChatStore";
 import {useCallStore} from "../store/useCallStore";
 import CreateChannelModal from "./CreateChannelModal";
+import {useLanguageStore} from "../store/useLanguageStore";
+import {useSettingsStore} from "../store/useSettingsStore";
+import {LANGUAGES} from "../lib/translations";
+import toast from "react-hot-toast";
 import axios from "axios";
+
 
 const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
 const API_BASE_URL = "http://localhost:8000";
@@ -51,8 +62,8 @@ function ToggleSwitch({checked, onChange, disabled}) {
             role="switch"
             aria-checked={checked}
             disabled={disabled}
-            onClick={() => {
-                console.log("🔘 سوییچ کلیک شد. مقدار فعلی:", checked, "=> جدید:", !checked);
+            onClick={(e) => {
+                e.stopPropagation();
                 if (!disabled) onChange(!checked);
             }}
             className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none ${
@@ -71,10 +82,7 @@ function ToggleSwitch({checked, onChange, disabled}) {
 function SettingRow({icon: Icon, iconColor = "text-cyan-400", title, subtitle, onClick, rightContent, danger}) {
     return (
         <div
-            onClick={(e) => {
-                console.log("SettingRow clicked:", title);
-                if (onClick) onClick(e);
-            }}
+            onClick={onClick}
             className="flex items-center gap-3 px-4 py-3.5 transition-colors cursor-pointer hover:bg-slate-700/40 active:bg-slate-700/60"
         >
             {Icon && (
@@ -138,6 +146,8 @@ function RadioOptionGroup({options, value, onChange}) {
 }
 
 function ProfileHeader({onNewGroup}) {
+
+
     const {
         logout,
         allContacts,
@@ -150,6 +160,11 @@ function ProfileHeader({onNewGroup}) {
         isSoundEnabled,
         toggleSound,
     } = useChatStore();
+
+    const [isEditingBio, setIsEditingBio] = useState(false);
+    const bioInputRef = useRef(null);
+
+
 
     const {disconnectCallSocket} = useCallStore();
 
@@ -167,6 +182,7 @@ function ProfileHeader({onNewGroup}) {
     const [addContactError, setAddContactError] = useState("");
     const [addContactSuccess, setAddContactSuccess] = useState(false);
     const [contactQuery, setContactQuery] = useState("");
+    const [openFaqIndex, setOpenFaqIndex] = useState(null);
     const [addingId, setAddingId] = useState(null);
     const debounceRef = useRef(null);
 
@@ -225,11 +241,51 @@ function ProfileHeader({onNewGroup}) {
     const [deleteAccountError, setDeleteAccountError] = useState("");
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
+    // ---- مخاطبین مسدود شده ----
+    const [blockedContacts, setBlockedContacts] = useState([]);
+    const [blockedLoading, setBlockedLoading] = useState(false);
+    const [unblockingId, setUnblockingId] = useState(null);
+
+    // ---- مدیریت فضای ذخیره‌سازی ----
+    const [storageSummary, setStorageSummary] = useState(null);
+    const [storageLoading, setStorageLoading] = useState(false);
+    const [storageItems, setStorageItems] = useState([]);
+    const [storageItemsType, setStorageItemsType] = useState(null);
+    const [storageItemsLoading, setStorageItemsLoading] = useState(false);
+    const [selectedStorageItems, setSelectedStorageItems] = useState([]);
+    const [deletingStorage, setDeletingStorage] = useState(false);
+    const [cacheCleared, setCacheCleared] = useState(false);
+
     const fileInputRef = useRef(null);
     const settingsAvatarInputRef = useRef(null);
     const inputRef = useRef(null);
     const accessToken = localStorage.getItem("accessToken");
     const authHeaders = {Authorization: `Bearer ${accessToken}`};
+
+    // ---- پس‌زمینه چت و پشتیبان‌گیری ----
+    const [chatWallpaper, setChatWallpaper] = useState("default");
+    const [lastBackupAt, setLastBackupAt] = useState(null);
+    const [backupInProgress, setBackupInProgress] = useState(false);
+
+    const setAppLanguage = useLanguageStore((state) => state.setLanguage);
+
+    const setLocalSetting = useSettingsStore((state) => state.setSetting);
+
+    useEffect(() => {
+        if (isEditingBio && bioInputRef.current) bioInputRef.current.focus();
+    }, [isEditingBio]);
+
+    const handleBioChange = async () => {
+        try {
+            const formData = new FormData();
+            formData.append("bio", profile.bio || "");
+            const res = await axios.patch(`${API_BASE_URL}/accounts/profile/update/`, formData, {
+                headers: {Authorization: `Bearer ${accessToken}`},
+            });
+            setProfile(res.data);
+        } catch {
+        }
+    };
 
     useEffect(() => {
         if (!accessToken) return;
@@ -275,9 +331,24 @@ function ProfileHeader({onNewGroup}) {
                 setDarkTheme(!!d.dark_theme);
                 setEnterToSend(!!d.enter_to_send);
                 setFontSize(d.font_size ?? "medium");
+                setLocalSetting("fontSize", d.font_size ?? "medium");
+                setLocalSetting("chatWallpaper", d.chat_wallpaper ?? "default");
+                setLocalSetting("enterToSend", !!d.enter_to_send);
                 setAutoDownloadWifi(!!d.auto_download_wifi);
                 setAutoDownloadMobile(!!d.auto_download_mobile);
                 setLanguage(d.language ?? "fa");
+                setChatWallpaper(d.chat_wallpaper ?? "default");
+                setLastBackupAt(d.last_backup_at ?? null);
+                setNotifMessages(!!d.notif_messages);
+                setLocalSetting("notifMessages", !!d.notif_messages);
+                setNotifGroups(!!d.notif_groups);
+                setLocalSetting("notifGroups", !!d.notif_groups);
+                setNotifCalls(!!d.notif_calls);
+                setLocalSetting("notifCalls", !!d.notif_calls);
+                setNotifPreview(!!d.notif_preview);
+                setLocalSetting("notifPreview", !!d.notif_preview);
+                setNotifVibrate(!!d.notif_vibrate);
+                setLocalSetting("notifVibrate", !!d.notif_vibrate);
 
                 if (typeof d.sound_enabled === "boolean" && d.sound_enabled !== isSoundEnabled) {
                     toggleSound();
@@ -301,31 +372,19 @@ function ProfileHeader({onNewGroup}) {
         setSettingsSaving(true);
         setSettingsError("");
         try {
-            const res = await axios.patch(`${API_BASE_URL}/settings/`, {[field]: value}, {headers: authHeaders});
-            // eslint-disable-next-line no-console
-            console.log("✅ PATCH موفق بود:", field, "=>", value, res.data);
+            await axios.patch(`${API_BASE_URL}/settings/`, {[field]: value}, {headers: authHeaders});
         } catch (err) {
             console.error("خطا در ذخیره تنظیمات:", err.response?.data || err);
-            // DEBUG TEMP: پاپ‌آپ نشون بده تا بدون DevTools هم خطا معلوم باشه
-            alert(
-                "❌ ذخیره نشد!\nفیلد: " +
-                    field +
-                    "\nمقدار: " +
-                    value +
-                    "\nخطا: " +
-                    (err.response
-                        ? `status ${err.response.status} - ${JSON.stringify(err.response.data)}`
-                        : err.message)
-            );
             setSettingsError("ذخیره نشد. دوباره امتحان کن.");
         } finally {
             setSettingsSaving(false);
         }
     };
 
-    const bindToggle = (setter, field) => (value) => {
-        setter(value);
-        patchSetting(field, value);
+    const bindToggle = (setter, field, storeKey) => (value) => {
+    setter(value);
+    patchSetting(field, value);
+    if (storeKey) setLocalSetting(storeKey, value);
     };
 
     const cycleVisibility = (current, setter, field) => {
@@ -338,10 +397,12 @@ function ProfileHeader({onNewGroup}) {
         const next = fontSize === "small" ? "medium" : fontSize === "medium" ? "large" : "small";
         setFontSize(next);
         patchSetting("font_size", next);
+        setLocalSetting("fontSize", next); // ← این خط
     };
 
     const handleLanguageChange = (value) => {
         setLanguage(value);
+        setAppLanguage(value); // ✅ کل اپ همین لحظه عوض می‌شه (جهت صفحه + متن‌ها)
         patchSetting("language", value);
     };
 
@@ -353,6 +414,14 @@ function ProfileHeader({onNewGroup}) {
         handleToggleSound();
         patchSetting("sound_enabled", !isSoundEnabled);
     };
+
+    // این تابع جدیده، جای bindToggle(setEnterToSend, "enter_to_send") استفادش کن
+    const handleEnterToSendToggle = (value) => {
+        setEnterToSend(value);
+        patchSetting("enter_to_send", value);
+        setLocalSetting("enterToSend", value);
+    };
+
 
     const handleLogout = async () => {
         const refreshToken = localStorage.getItem("refreshToken");
@@ -371,6 +440,35 @@ function ProfileHeader({onNewGroup}) {
             window.location.replace("/login");
         }
     };
+    // ========================== دعوت از دوستان ==========================
+    const handleInviteFriends = async () => {
+        const inviteUrl = `${window.location.origin}/signup`;
+        const shareText = "بیا با من توی چتیفای چت کن 🚀";
+
+        // ✅ اگه گوشی/مرورگر از Share API پشتیبانی کنه (بیشتر موبایل‌ها)
+        if (navigator.share) {
+            try {
+                await navigator.share({title: "چتیفای", text: shareText, url: inviteUrl});
+            } catch (err) {
+                // اگه خودِ کاربر منوی اشتراک‌گذاری رو کنسل کرده، این خطا طبیعیه
+                if (err?.name !== "AbortError") {
+                    console.error("خطا در اشتراک‌گذاری:", err);
+                    toast.error("اشتراک‌گذاری ممکن نشد");
+                }
+            }
+            return;
+        }
+
+        // ✅ فال‌بک برای دسکتاپ: کپی توی کلیپ‌بورد + فیدبک واقعی
+        try {
+            await navigator.clipboard.writeText(inviteUrl);
+            toast.success("لینک دعوت کپی شد ✅");
+        } catch (err) {
+            console.error("خطا در کپی لینک:", err);
+            toast.error("کپی لینک ممکن نشد");
+        }
+    };
+
 
     const handleToggleSound = () => {
         try {
@@ -408,6 +506,48 @@ function ProfileHeader({onNewGroup}) {
             });
             setProfile(res.data);
         } catch {
+        }
+    };
+
+    const handleWallpaperSelect = (id) => {
+        setChatWallpaper(id);
+        patchSetting("chat_wallpaper", id);
+        setLocalSetting("chatWallpaper", id); // ← این خط
+    };
+
+    // ---- پشتیبان‌گیری از چت‌ها ----
+    const formatBackupDate = (iso) => {
+        if (!iso) return "هنوز پشتیبان‌گیری نشده";
+        try {
+            return `آخرین بار: ${new Date(iso).toLocaleDateString("fa-IR")}`;
+        } catch {
+            return "هنوز پشتیبان‌گیری نشده";
+        }
+    };
+
+    const handleBackupChats = async () => {
+        setBackupInProgress(true);
+        try {
+            const res = await axios.get(`${API_BASE_URL}/settings/backup-chats/`, {
+                headers: authHeaders,
+                responseType: "blob",
+            });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement("a");
+            link.href = url;
+            const today = new Date().toISOString().slice(0, 10);
+            link.setAttribute("download", `chatify-backup-${today}.json`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            setLastBackupAt(new Date().toISOString());
+            toast.success("پشتیبان‌گیری با موفقیت دانلود شد ✅");
+        } catch (err) {
+            console.error("خطا در پشتیبان‌گیری:", err.response?.data || err);
+            toast.error("پشتیبان‌گیری ناموفق بود");
+        } finally {
+            setBackupInProgress(false);
         }
     };
 
@@ -579,6 +719,107 @@ function ProfileHeader({onNewGroup}) {
         setDeleteAccountError("");
     };
 
+    // ---- مخاطبین مسدود شده ----
+    const openBlockedView = async () => {
+        setSettingsView("blocked");
+        setBlockedLoading(true);
+        try {
+            const res = await axios.get(`${API_BASE_URL}/settings/blocked/`, {headers: authHeaders});
+            setBlockedContacts(res.data || []);
+        } catch (err) {
+            console.error("خطا در دریافت لیست مسدودها:", err.response?.data || err);
+        } finally {
+            setBlockedLoading(false);
+        }
+    };
+
+    const handleUnblock = async (contactId) => {
+        setUnblockingId(contactId);
+        try {
+            await axios.post(`${API_BASE_URL}/settings/unblock/${contactId}/`, {}, {headers: authHeaders});
+            setBlockedContacts((prev) => prev.filter((c) => c.id !== contactId));
+        } catch (err) {
+            console.error("خطا در رفع مسدودیت:", err.response?.data || err);
+        } finally {
+            setUnblockingId(null);
+        }
+    };
+
+    // ---- مدیریت فضای ذخیره‌سازی ----
+    const fetchStorageSummary = async () => {
+        setStorageLoading(true);
+        try {
+            const res = await axios.get(`${API_BASE_URL}/settings/storage-usage/`, {headers: authHeaders});
+            setStorageSummary(res.data);
+        } catch (err) {
+            console.error("خطا در دریافت اطلاعات فضا:", err.response?.data || err);
+        } finally {
+            setStorageLoading(false);
+        }
+    };
+
+    const openStorageManage = async () => {
+        setSettingsView("storage-manage");
+        await fetchStorageSummary();
+    };
+
+    const openStorageItems = async (type) => {
+        setStorageItemsType(type);
+        setSelectedStorageItems([]);
+        setStorageItemsLoading(true);
+        setSettingsView("storage-items");
+        try {
+            const res = await axios.get(`${API_BASE_URL}/settings/storage-usage/items/`, {
+                headers: authHeaders,
+                params: {type},
+            });
+            setStorageItems(res.data || []);
+        } catch (err) {
+            console.error("خطا در دریافت لیست فایل‌ها:", err.response?.data || err);
+        } finally {
+            setStorageItemsLoading(false);
+        }
+    };
+
+    const toggleStorageItemSelect = (messageId) => {
+        setSelectedStorageItems((prev) =>
+            prev.includes(messageId) ? prev.filter((id) => id !== messageId) : [...prev, messageId]
+        );
+    };
+
+    const handleDeleteSelectedStorageItems = async () => {
+        if (selectedStorageItems.length === 0) return;
+        setDeletingStorage(true);
+        try {
+            await Promise.all(
+                selectedStorageItems.map((id) =>
+                    axios.delete(`${API_BASE_URL}/settings/storage-usage/items/${id}/`, {headers: authHeaders})
+                )
+            );
+            setStorageItems((prev) => prev.filter((item) => !selectedStorageItems.includes(item.messageId)));
+            setSelectedStorageItems([]);
+            fetchStorageSummary();
+        } catch (err) {
+            console.error("خطا در حذف فایل‌ها:", err.response?.data || err);
+        } finally {
+            setDeletingStorage(false);
+        }
+    };
+
+    const handleClearCache = async () => {
+        try {
+            if (window.caches) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+            setSelectedImg(null);
+            setCacheCleared(true);
+            setTimeout(() => setCacheCleared(false), 2500);
+        } catch (err) {
+            console.error("خطا در پاک کردن کش:", err);
+        }
+    };
+
     // ---- تغییر رمز عبور ----
     const handleChangePassword = async (e) => {
         e.preventDefault();
@@ -647,6 +888,55 @@ function ProfileHeader({onNewGroup}) {
 
     const fontSizeLabel = (v) => (v === "small" ? "کوچک" : v === "large" ? "بزرگ" : "متوسط");
 
+    const formatBytes = (bytes) => {
+        if (!bytes) return "۰ مگابایت";
+        const mb = bytes / (1024 * 1024);
+        if (mb < 1) return `${Math.round(bytes / 1024)} کیلوبایت`;
+        if (mb < 1024) return `${mb.toFixed(1)} مگابایت`;
+        return `${(mb / 1024).toFixed(2)} گیگابایت`;
+    };
+    const WALLPAPER_OPTIONS = [
+        {id: "default", label: "پیش‌فرض", preview: "bg-slate-900"},
+        {id: "slate", label: "سرمه‌ای ساده", preview: "bg-slate-800"},
+        {id: "cyan_gradient", label: "فیروزه‌ای", preview: "bg-gradient-to-br from-cyan-600 to-slate-900"},
+        {id: "violet_gradient", label: "بنفش", preview: "bg-gradient-to-br from-violet-600 to-slate-900"},
+        {id: "emerald_gradient", label: "سبز", preview: "bg-gradient-to-br from-emerald-600 to-slate-900"},
+        {
+            id: "dots",
+            label: "نقطه‌چین",
+            preview: "bg-slate-800 bg-[radial-gradient(circle,rgba(255,255,255,0.12)_1px,transparent_1px)] bg-[length:14px_14px]",
+        },
+    ];
+
+    // ============================== دیتای ثابت بخش کمک ==============================
+    const FAQ_ITEMS = [
+        {
+            q: "چطور مخاطب جدید اضافه کنم؟",
+            a: "از دکمه‌ی + بالای صفحه، گزینه‌ی «ساخت مخاطب» رو بزن. می‌تونی با شماره موبایل یا ایمیل مخاطب رو پیدا کنی.",
+        },
+        {
+            q: "چطور یه نفر رو مسدود کنم؟",
+            a: "وارد چت اون فرد بشو، از سه‌نقطه‌ی بالای صفحه گزینه‌ی «مسدود کردن» رو بزن. بعدش نه پیامی ازش می‌بینی نه اون از تو.",
+        },
+        {
+            q: "پیام‌هام رمزنگاری شده‌ست؟",
+            a: "پیام‌ها بین دستگاه تو و سرورهای چتیفای با HTTPS منتقل می‌شن. رمزنگاری سرتاسری (End-to-End) در حال توسعه‌ست.",
+        },
+        {
+            q: "چطور اکانتمو حذف کنم؟",
+            a: "تنظیمات ← اطلاعات حساب ← پایین صفحه «حذف حساب کاربری». توجه کن این کار برگشت‌ناپذیره و همه‌ی چت‌هات پاک می‌شه.",
+        },
+        {
+            q: "چرا اعلان پیام نمی‌گیرم؟",
+            a: "از تنظیمات ← اعلان‌ها مطمئن شو «اعلان پیام‌های جدید» روشنه. همچنین مرورگرت باید اجازه‌ی نوتیفیکیشن به سایت رو داده باشه.",
+        },
+    ];
+
+    const SUPPORT_EMAIL = "matin20001000@gmail.comر"; // ← ایمیلتو اینجا بذار
+    const SUPPORT_TELEGRAM = "https://t.me/Matin_8_65"; // ← آیدی تلگرام پشتیبانیت
+    const APP_VERSION = "۱.۰.۰";
+
+
     if (!accessToken) return null;
 
     return (
@@ -706,6 +996,44 @@ function ProfileHeader({onNewGroup}) {
                             </div>
                         )}
                         <p className="text-slate-400 text-xs mt-1">آنلاین</p>
+                        {isEditingBio ? (
+                            <input
+                                ref={bioInputRef}
+                                type="text"
+                                maxLength={140}
+                                value={profile.bio || ""}
+                                onChange={(e) => setProfile({...profile, bio: e.target.value})}
+                                onBlur={() => {
+                                    setIsEditingBio(false);
+                                    handleBioChange();
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        setIsEditingBio(false);
+                                        handleBioChange();
+                                    }
+                                }}
+                                placeholder="یه چیزی درباره‌ی خودت بنویس..."
+                                className="mt-1.5 bg-slate-900/60 border border-cyan-400/50 outline-none text-slate-200 text-xs px-2.5 py-1 rounded-full w-full max-w-[180px] focus:border-cyan-400 transition-colors"
+                            />
+                        ) : (
+                            <button
+                                onClick={() => setIsEditingBio(true)}
+                                className="group/bio mt-1.5 flex items-center gap-1.5 max-w-[180px] px-2.5 py-1 rounded-full
+                                           bg-gradient-to-r from-slate-800/80 to-slate-800/40 border border-slate-700/50
+                                           hover:border-cyan-500/40 hover:from-cyan-500/10 hover:to-slate-800/40
+                                           transition-all duration-200"
+                            >
+                                <SparklesIcon
+                                    className="w-2.5 h-2.5 text-cyan-400/70 flex-shrink-0 group-hover/bio:text-cyan-400 transition-colors"/>
+                                <span
+                                    className="text-[11px] text-slate-400 group-hover/bio:text-slate-200 truncate transition-colors">
+                                    {profile.bio || "درباره‌ی من..."}
+                                </span>
+                                <PencilIcon
+                                    className="w-2.5 h-2.5 text-slate-600 opacity-0 group-hover/bio:opacity-100 group-hover/bio:text-cyan-400 flex-shrink-0 transition-all"/>
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -718,23 +1046,8 @@ function ProfileHeader({onNewGroup}) {
                         <SettingsIcon className="size-5"/>
                     </button>
 
-                    <button
-                        onClick={handleLogout}
-                        className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
-                        title="خروج از حساب"
-                    >
-                        <LogOutIcon className="size-5"/>
-                    </button>
 
-                    <button
-                        onClick={handleToggleSound}
-                        className="text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center"
-                        title={isSoundEnabled ? "قطع صدا" : "پخش صدا"}
-                    >
-                        {isSoundEnabled ? <Volume2Icon className="size-5"/> : <VolumeOffIcon className="size-5"/>}
-                    </button>
-
-                    <div className="flex items-center gap-2">
+                    <div className="relative">
                         <button
                             onClick={() => setShowNewMenu((prev) => !prev)}
                             className="text-slate-300 hover:text-cyan-400 hover:bg-slate-700/60 transition-colors flex items-center justify-center rounded-full size-8"
@@ -742,6 +1055,37 @@ function ProfileHeader({onNewGroup}) {
                         >
                             <PlusIcon className="size-6"/>
                         </button>
+
+                        {showNewMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowNewMenu(false)}/>
+                                <div
+                                    className="absolute top-full left-0 mt-2 bg-slate-800 rounded-2xl shadow-2xl shadow-black/40 w-48 flex flex-col z-50 overflow-hidden border border-slate-700/50 divide-y divide-slate-700/40">
+                                    <button
+                                        onClick={openCreateGroup}
+                                        className="flex items-center gap-2.5 px-3.5 py-3 hover:bg-slate-700/50 cursor-pointer text-slate-200 text-sm text-right transition-colors"
+                                    >
+                                        <UsersIcon className="w-4 h-4 text-cyan-400 shrink-0"/>
+                                        ساخت گروه
+                                    </button>
+
+                                    <button
+                                        onClick={openAddContact}
+                                        className="flex items-center gap-2.5 px-3.5 py-3 hover:bg-slate-700/50 cursor-pointer text-slate-200 text-sm text-right transition-colors"
+                                    >
+                                        <UserPlus className="w-4 h-4 text-cyan-400 shrink-0"/>
+                                        ساخت مخاطب
+                                    </button>
+                                    <button
+                                        onClick={openCreateChannel}
+                                        className="flex items-center gap-2.5 px-3.5 py-3 hover:bg-slate-700/50 cursor-pointer text-slate-200 text-sm text-right transition-colors"
+                                    >
+                                        <Radio className="w-4 h-4 text-violet-400 shrink-0"/>
+                                        ساخت چنل
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     {showNewMenu && (
@@ -1143,7 +1487,7 @@ function ProfileHeader({onNewGroup}) {
                                             <SettingRow
                                                 icon={Globe}
                                                 title="زبان"
-                                                subtitle={language === "fa" ? "فارسی" : "English"}
+                                                subtitle={LANGUAGES[language]?.label || "فارسی"}
                                                 onClick={() => setSettingsView("language")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
@@ -1157,11 +1501,13 @@ function ProfileHeader({onNewGroup}) {
                                             <SettingRow
                                                 icon={Share2}
                                                 title="دعوت از دوستان"
-                                                onClick={() => navigator.clipboard?.writeText(window.location.origin)}
+                                                subtitle="لینک عضویت رو با دوستات به اشتراک بذار"
+                                                onClick={handleInviteFriends}
                                             />
 
                                             <div className="h-2"/>
-                                            <SettingRow icon={LogOutIcon} title="خروج از حساب" danger onClick={handleLogout}/>
+                                            <SettingRow icon={LogOutIcon} title="خروج از حساب" danger
+                                                        onClick={handleLogout}/>
                                             <div className="h-4"/>
                                         </div>
                                     </>
@@ -1202,12 +1548,16 @@ function ProfileHeader({onNewGroup}) {
 
                                             <SectionLabel>نام</SectionLabel>
                                             <div className="px-4 pb-4">
-                                                <div className="flex items-center bg-slate-900/60 rounded-lg px-3 py-2.5">
+                                                <div
+                                                    className="flex items-center bg-slate-900/60 rounded-lg px-3 py-2.5">
                                                     <UserIcon className="w-4 h-4 text-slate-400 flex-shrink-0"/>
                                                     <input
                                                         type="text"
                                                         value={profile.first_name || ""}
-                                                        onChange={(e) => setProfile({...profile, first_name: e.target.value})}
+                                                        onChange={(e) => setProfile({
+                                                            ...profile,
+                                                            first_name: e.target.value
+                                                        })}
                                                         onBlur={handleNameChange}
                                                         className="bg-transparent outline-none text-sm text-slate-200 w-full mr-2"
                                                     />
@@ -1216,7 +1566,8 @@ function ProfileHeader({onNewGroup}) {
 
                                             <SectionLabel>درباره من</SectionLabel>
                                             <div className="px-4 pb-4">
-                                                <div className="flex items-center bg-slate-900/60 rounded-lg px-3 py-2.5">
+                                                <div
+                                                    className="flex items-center bg-slate-900/60 rounded-lg px-3 py-2.5">
                                                     <Info className="w-4 h-4 text-slate-400 flex-shrink-0"/>
                                                     <input
                                                         type="text"
@@ -1240,12 +1591,14 @@ function ProfileHeader({onNewGroup}) {
                                             />
 
                                             {showChangePassword && (
-                                                <form onSubmit={handleChangePassword} className="mx-4 mb-3 p-3 rounded-lg bg-slate-900/60 space-y-2">
+                                                <form onSubmit={handleChangePassword}
+                                                      className="mx-4 mb-3 p-3 rounded-lg bg-slate-900/60 space-y-2">
                                                     {changePasswordError && (
                                                         <p className="text-red-400 text-xs text-center">{changePasswordError}</p>
                                                     )}
                                                     {changePasswordSuccess && (
-                                                        <p className="text-green-400 text-xs text-center">رمز عبور تغییر کرد ✅</p>
+                                                        <p className="text-green-400 text-xs text-center">رمز عبور تغییر
+                                                            کرد ✅</p>
                                                     )}
                                                     <input
                                                         type="password"
@@ -1274,6 +1627,7 @@ function ProfileHeader({onNewGroup}) {
                                             <SettingRow
                                                 icon={Shield}
                                                 title="تایید دو مرحله‌ای"
+                                                onClick={() => bindToggle(setTwoStepEnabled, "two_step_enabled")(!twoStepEnabled)}
                                                 rightContent={
                                                     <ToggleSwitch
                                                         checked={twoStepEnabled}
@@ -1291,9 +1645,11 @@ function ProfileHeader({onNewGroup}) {
                                             />
 
                                             {showDeleteAccountConfirm && (
-                                                <div className="mx-4 mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 space-y-2">
+                                                <div
+                                                    className="mx-4 mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 space-y-2">
                                                     <p className="text-red-300 text-xs leading-relaxed">
-                                                        با حذف حساب، تمام چت‌ها و اطلاعات تو برای همیشه پاک میشه. برای تایید رمزت رو وارد کن.
+                                                        با حذف حساب، تمام چت‌ها و اطلاعات تو برای همیشه پاک میشه. برای
+                                                        تایید رمزت رو وارد کن.
                                                     </p>
                                                     {deleteAccountError && (
                                                         <p className="text-red-400 text-xs">{deleteAccountError}</p>
@@ -1333,7 +1689,8 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "privacy" && (
                                     <>
-                                        <SettingsSubHeader title="حریم خصوصی" onBack={() => setSettingsView("main")} saving={settingsSaving}/>
+                                        <SettingsSubHeader title="حریم خصوصی" onBack={() => setSettingsView("main")}
+                                                           saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
                                             <SectionLabel>چه کسانی می‌بینند</SectionLabel>
                                             <SettingRow
@@ -1360,18 +1717,78 @@ function ProfileHeader({onNewGroup}) {
                                                 icon={Check}
                                                 title="رسید خوانده شدن"
                                                 subtitle="نمایش تیک آبی برای طرف مقابل"
+                                                onClick={() => bindToggle(setReadReceipts, "read_receipts")(!readReceipts)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={readReceipts} onChange={bindToggle(setReadReceipts, "read_receipts")}/>
+                                                    <ToggleSwitch checked={readReceipts}
+                                                                  onChange={bindToggle(setReadReceipts, "read_receipts")}/>
                                                 }
                                             />
                                             <SettingRow
                                                 icon={onlineStatus ? Eye : EyeOff}
                                                 title="نمایش وضعیت آنلاین"
+                                                onClick={() => bindToggle(setOnlineStatus, "online_status_visible")(!onlineStatus)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={onlineStatus} onChange={bindToggle(setOnlineStatus, "online_status_visible")}/>
+                                                    <ToggleSwitch checked={onlineStatus}
+                                                                  onChange={bindToggle(setOnlineStatus, "online_status_visible")}/>
                                                 }
                                             />
-                                            <SettingRow icon={Shield} title="مخاطبین مسدود شده" subtitle="۰ مخاطب"/>
+                                            <SettingRow
+                                                icon={Shield}
+                                                title="مخاطبین مسدود شده"
+                                                subtitle={blockedContacts.length > 0 ? `${blockedContacts.length} مخاطب` : "هیچ‌کس"}
+                                                onClick={openBlockedView}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
+                                            <div className="h-4"/>
+                                        </div>
+                                    </>
+                                )}
+
+                                {settingsView === "blocked" && (
+                                    <>
+                                        <SettingsSubHeader title="مخاطبین مسدود شده"
+                                                           onBack={() => setSettingsView("privacy")}/>
+                                        <div className="overflow-y-auto flex-1">
+                                            {blockedLoading && (
+                                                <div className="flex items-center justify-center py-10">
+                                                    <Loader2 className="w-5 h-5 text-cyan-400 animate-spin"/>
+                                                </div>
+                                            )}
+
+                                            {!blockedLoading && blockedContacts.length === 0 && (
+                                                <p className="text-center text-slate-500 text-sm py-10">
+                                                    هیچ مخاطبی مسدود نکردی
+                                                </p>
+                                            )}
+
+                                            {!blockedLoading &&
+                                                blockedContacts.map((c) => (
+                                                    <div
+                                                        key={c.id}
+                                                        className="flex items-center gap-3 px-4 py-3 hover:bg-slate-700/30 transition-colors"
+                                                    >
+                                                        <div
+                                                            className="w-10 h-10 rounded-full overflow-hidden border border-slate-700 flex-shrink-0">
+                                                            <img
+                                                                src={c.image || "/avatar.png"}
+                                                                alt={c.name}
+                                                                className="w-full h-full object-cover"
+                                                                onError={(e) => (e.target.src = "/avatar.png")}
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-slate-200 text-sm font-medium truncate">{c.name}</p>
+                                                            <p className="text-slate-500 text-xs truncate">{c.email}</p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleUnblock(c.id)}
+                                                            disabled={unblockingId === c.id}
+                                                            className="text-xs px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 flex-shrink-0 transition-colors"
+                                                        >
+                                                            {unblockingId === c.id ? "..." : "رفع مسدودیت"}
+                                                        </button>
+                                                    </div>
+                                                ))}
                                             <div className="h-4"/>
                                         </div>
                                     </>
@@ -1379,21 +1796,26 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "notifications" && (
                                     <>
-                                        <SettingsSubHeader title="اعلان‌ها" onBack={() => setSettingsView("main")} saving={settingsSaving}/>
+                                        <SettingsSubHeader title="اعلان‌ها" onBack={() => setSettingsView("main")}
+                                                           saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
                                             <SectionLabel>پیام‌ها</SectionLabel>
                                             <SettingRow
                                                 icon={notifMessages ? Bell : BellOff}
                                                 title="اعلان پیام‌های جدید"
+                                                onClick={() => bindToggle(setNotifMessages, "notif_messages", "notifMessages")(!notifMessages)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={notifMessages} onChange={bindToggle(setNotifMessages, "notif_messages")}/>
+                                                    <ToggleSwitch checked={notifMessages}
+                                                                  onChange={bindToggle(setNotifMessages, "notif_messages", "notifMessages")}/>
                                                 }
                                             />
                                             <SettingRow
                                                 icon={Eye}
                                                 title="نمایش متن پیام در اعلان"
+                                                onClick={() => bindToggle(setNotifPreview, "notif_preview", "notifPreview")(!notifPreview)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={notifPreview} onChange={bindToggle(setNotifPreview, "notif_preview")}/>
+                                                    <ToggleSwitch checked={notifPreview}
+                                                                  onChange={bindToggle(setNotifPreview, "notif_preview", "notifPreview")}/>
                                                 }
                                             />
 
@@ -1401,8 +1823,10 @@ function ProfileHeader({onNewGroup}) {
                                             <SettingRow
                                                 icon={UsersIcon}
                                                 title="اعلان پیام‌های گروه"
+                                                onClick={() => bindToggle(setNotifGroups, "notif_groups", "notifGroups")(!notifGroups)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={notifGroups} onChange={bindToggle(setNotifGroups, "notif_groups")}/>
+                                                    <ToggleSwitch checked={notifGroups}
+                                                                  onChange={bindToggle(setNotifGroups, "notif_groups", "notifGroups")}/>
                                                 }
                                             />
 
@@ -1410,8 +1834,10 @@ function ProfileHeader({onNewGroup}) {
                                             <SettingRow
                                                 icon={PhoneIcon}
                                                 title="اعلان تماس‌های ورودی"
+                                                onClick={() => bindToggle(setNotifCalls, "notif_calls", "notifCalls")(!notifCalls)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={notifCalls} onChange={bindToggle(setNotifCalls, "notif_calls")}/>
+                                                    <ToggleSwitch checked={notifCalls}
+                                                                  onChange={bindToggle(setNotifCalls, "notif_calls", "notifCalls")}/>
                                                 }
                                             />
 
@@ -1419,14 +1845,18 @@ function ProfileHeader({onNewGroup}) {
                                             <SettingRow
                                                 icon={Smartphone}
                                                 title="لرزش"
+                                                onClick={() => bindToggle(setNotifVibrate, "notif_vibrate", "notifVibrate")(!notifVibrate)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={notifVibrate} onChange={bindToggle(setNotifVibrate, "notif_vibrate")}/>
+                                                    <ToggleSwitch checked={notifVibrate}
+                                                                  onChange={bindToggle(setNotifVibrate, "notif_vibrate", "notifVibrate")}/>
                                                 }
                                             />
                                             <SettingRow
                                                 icon={isSoundEnabled ? Volume2Icon : VolumeOffIcon}
                                                 title="صدای اعلان"
-                                                rightContent={<ToggleSwitch checked={isSoundEnabled} onChange={handleSoundToggleInSettings}/>}
+                                                onClick={handleSoundToggleInSettings}
+                                                rightContent={<ToggleSwitch checked={isSoundEnabled}
+                                                                            onChange={handleSoundToggleInSettings}/>}
                                             />
                                             <div className="h-4"/>
                                         </div>
@@ -1435,18 +1865,27 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "chats" && (
                                     <>
-                                        <SettingsSubHeader title="چت‌ها" onBack={() => setSettingsView("main")} saving={settingsSaving}/>
+                                        <SettingsSubHeader title="چت‌ها" onBack={() => setSettingsView("main")}
+                                                           saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
                                             <SectionLabel>ظاهر</SectionLabel>
                                             <SettingRow
                                                 icon={MessageSquare}
                                                 title="تم تیره"
                                                 subtitle={darkTheme ? "روشن" : "خاموش"}
+                                                onClick={() => bindToggle(setDarkTheme, "dark_theme")(!darkTheme)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={darkTheme} onChange={bindToggle(setDarkTheme, "dark_theme")}/>
+                                                    <ToggleSwitch checked={darkTheme}
+                                                                  onChange={bindToggle(setDarkTheme, "dark_theme")}/>
                                                 }
                                             />
-                                            <SettingRow icon={ImageIcon} title="پس‌زمینه چت" subtitle="پیش‌فرض"/>
+                                            <SettingRow
+                                                icon={ImageIcon}
+                                                title="پس‌زمینه چت"
+                                                subtitle={WALLPAPER_OPTIONS.find((w) => w.id === chatWallpaper)?.label || "پیش‌فرض"}
+                                                onClick={() => setSettingsView("wallpaper")}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
                                             <SettingRow
                                                 icon={ChevronDown}
                                                 title="اندازه فونت"
@@ -1459,55 +1898,265 @@ function ProfileHeader({onNewGroup}) {
                                                 icon={Check}
                                                 title="ارسال با Enter"
                                                 subtitle="فعال کردن ارسال پیام با زدن اینتر"
+                                                onClick={() => bindToggle(setEnterToSend, "enter_to_send")(!enterToSend)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={enterToSend} onChange={bindToggle(setEnterToSend, "enter_to_send")}/>
+                                                    <ToggleSwitch checked={enterToSend}
+                                                                  onChange={bindToggle(setEnterToSend, "enter_to_send")}/>
                                                 }
                                             />
 
                                             <SectionLabel>پشتیبان‌گیری</SectionLabel>
-                                            <SettingRow icon={Database} title="پشتیبان‌گیری از چت‌ها" subtitle="هنوز پشتیبان‌گیری نشده"/>
+                                            <SettingRow
+                                                icon={Database}
+                                                title="پشتیبان‌گیری از چت‌ها"
+                                                subtitle={backupInProgress ? "در حال آماده‌سازی..." : formatBackupDate(lastBackupAt)}
+                                                onClick={backupInProgress ? undefined : handleBackupChats}
+                                            />
                                             <div className="h-4"/>
                                         </div>
                                     </>
                                 )}
 
+                                {settingsView === "wallpaper" && (
+                                    <>
+                                        <SettingsSubHeader title="پس‌زمینه چت" onBack={() => setSettingsView("chats")}
+                                                           saving={settingsSaving}/>
+                                        <div className="overflow-y-auto flex-1 p-4">
+                                            <div className="grid grid-cols-3 gap-3">
+                                                {WALLPAPER_OPTIONS.map((opt) => {
+                                                    const selected = chatWallpaper === opt.id;
+                                                    return (
+                                                        <button
+                                                            key={opt.id}
+                                                            onClick={() => handleWallpaperSelect(opt.id)}
+                                                            className={`relative aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all ${
+                                                                selected ? "border-cyan-400" : "border-transparent"
+                                                            }`}
+                                                        >
+                                                            <div className={`w-full h-full ${opt.preview}`}/>
+                                                            {selected && (
+                                                                <div
+                                                                    className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                                                    <div
+                                                                        className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center">
+                                                                        <Check className="w-4 h-4 text-white"/>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            <p className="absolute bottom-0 inset-x-0 text-center text-[10px] text-white/90 bg-black/40 py-1">
+                                                                {opt.label}
+                                                            </p>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                                 {settingsView === "storage" && (
                                     <>
-                                        <SettingsSubHeader title="ذخیره‌سازی و داده" onBack={() => setSettingsView("main")} saving={settingsSaving}/>
+                                        <SettingsSubHeader title="ذخیره‌سازی و داده"
+                                                           onBack={() => setSettingsView("main")}
+                                                           saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
                                             <SectionLabel>دانلود خودکار رسانه</SectionLabel>
                                             <SettingRow
                                                 icon={ImageIcon}
                                                 title="در وای‌فای"
+                                                onClick={() => bindToggle(setAutoDownloadWifi, "auto_download_wifi")(!autoDownloadWifi)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={autoDownloadWifi} onChange={bindToggle(setAutoDownloadWifi, "auto_download_wifi")}/>
+                                                    <ToggleSwitch checked={autoDownloadWifi}
+                                                                  onChange={bindToggle(setAutoDownloadWifi, "auto_download_wifi")}/>
                                                 }
                                             />
                                             <SettingRow
                                                 icon={Smartphone}
                                                 title="در اینترنت موبایل"
+                                                onClick={() => bindToggle(setAutoDownloadMobile, "auto_download_mobile")(!autoDownloadMobile)}
                                                 rightContent={
-                                                    <ToggleSwitch checked={autoDownloadMobile} onChange={bindToggle(setAutoDownloadMobile, "auto_download_mobile")}/>
+                                                    <ToggleSwitch checked={autoDownloadMobile}
+                                                                  onChange={bindToggle(setAutoDownloadMobile, "auto_download_mobile")}/>
                                                 }
                                             />
 
                                             <SectionLabel>مصرف فضا</SectionLabel>
-                                            <SettingRow icon={Database} title="مدیریت فضای ذخیره‌سازی" subtitle="۰ مگابایت مصرف شده"/>
-                                            <SettingRow icon={Trash2} title="پاک کردن حافظه پنهان" danger/>
+                                            <SettingRow
+                                                icon={Database}
+                                                title="مدیریت فضای ذخیره‌سازی"
+                                                subtitle={storageSummary ? `${formatBytes(storageSummary.totalBytes)} مصرف شده` : "برای مشاهده کلیک کن"}
+                                                onClick={openStorageManage}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
+                                            <SettingRow
+                                                icon={Trash2}
+                                                title={cacheCleared ? "حافظه پنهان پاک شد ✅" : "پاک کردن حافظه پنهان"}
+                                                danger={!cacheCleared}
+                                                onClick={handleClearCache}
+                                            />
                                             <div className="h-4"/>
                                         </div>
                                     </>
                                 )}
 
+                                {settingsView === "storage-manage" && (
+                                    <>
+                                        <SettingsSubHeader title="مدیریت فضای ذخیره‌سازی"
+                                                           onBack={() => setSettingsView("storage")}/>
+                                        <div className="overflow-y-auto flex-1">
+                                            {storageLoading && (
+                                                <div className="flex items-center justify-center py-10">
+                                                    <Loader2 className="w-6 h-6 text-cyan-400 animate-spin"/>
+                                                </div>
+                                            )}
+
+                                            {!storageLoading && storageSummary && (
+                                                <>
+                                                    <div className="px-4 py-6 text-center border-b border-slate-700/40">
+                                                        <p className="text-3xl font-bold text-cyan-400">
+                                                            {formatBytes(storageSummary.totalBytes)}
+                                                        </p>
+                                                        <p className="text-slate-500 text-xs mt-1">کل فضای مصرف‌شده توسط
+                                                            رسانه‌ها</p>
+                                                    </div>
+
+                                                    {storageSummary.totalBytes > 0 && (
+                                                        <div className="px-4 py-4">
+                                                            <div
+                                                                className="flex h-3 rounded-full overflow-hidden bg-slate-700/50">
+                                                                {storageSummary.breakdown.map((b, i) => {
+                                                                    const pct = (b.bytes / storageSummary.totalBytes) * 100;
+                                                                    const colors = ["bg-cyan-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500"];
+                                                                    return pct > 0 ? (
+                                                                        <div
+                                                                            key={b.type}
+                                                                            className={`${colors[i % colors.length]} transition-all`}
+                                                                            style={{width: `${pct}%`}}
+                                                                        />
+                                                                    ) : null;
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <SectionLabel>تفکیک بر اساس نوع</SectionLabel>
+                                                    {storageSummary.breakdown.map((b, i) => {
+                                                        const icons = {
+                                                            image: ImageIcon,
+                                                            file: Database,
+                                                            voice: Volume2Icon,
+                                                            video_note: MessageSquare,
+                                                        };
+                                                        const dotColors = ["bg-cyan-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500"];
+                                                        const Icon = icons[b.type] || Database;
+                                                        return (
+                                                            <SettingRow
+                                                                key={b.type}
+                                                                icon={Icon}
+                                                                title={b.label}
+                                                                subtitle={`${b.count} مورد`}
+                                                                onClick={b.count > 0 ? () => openStorageItems(b.type) : undefined}
+                                                                rightContent={
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span
+                                                                            className={`w-2 h-2 rounded-full ${dotColors[i % dotColors.length]}`}/>
+                                                                        <span
+                                                                            className="text-slate-400 text-xs">{formatBytes(b.bytes)}</span>
+                                                                        {b.count > 0 && <ChevronLeft
+                                                                            className="w-4 h-4 text-slate-500"/>}
+                                                                    </div>
+                                                                }
+                                                            />
+                                                        );
+                                                    })}
+                                                </>
+                                            )}
+                                            <div className="h-4"/>
+                                        </div>
+                                    </>
+                                )}
+
+                                {settingsView === "storage-items" && (
+                                    <>
+                                        <SettingsSubHeader title="فایل‌ها"
+                                                           onBack={() => setSettingsView("storage-manage")}/>
+                                        <div className="overflow-y-auto flex-1">
+                                            {storageItemsLoading && (
+                                                <div className="flex items-center justify-center py-10">
+                                                    <Loader2 className="w-6 h-6 text-cyan-400 animate-spin"/>
+                                                </div>
+                                            )}
+
+                                            {!storageItemsLoading && storageItems.length === 0 && (
+                                                <p className="text-center text-slate-500 text-sm py-10">چیزی پیدا
+                                                    نشد</p>
+                                            )}
+
+                                            {!storageItemsLoading &&
+                                                storageItems.map((item) => {
+                                                    const selected = selectedStorageItems.includes(item.messageId);
+                                                    return (
+                                                        <div
+                                                            key={item.messageId}
+                                                            onClick={() => toggleStorageItemSelect(item.messageId)}
+                                                            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                                                                selected ? "bg-cyan-600/20" : "hover:bg-slate-700/30"
+                                                            }`}
+                                                        >
+                                                            <div
+                                                                className="w-11 h-11 rounded-lg overflow-hidden bg-slate-700/60 flex-shrink-0 flex items-center justify-center">
+                                                                {item.url && storageItemsType === "image" ? (
+                                                                    <img src={item.url} alt=""
+                                                                         className="w-full h-full object-cover"/>
+                                                                ) : (
+                                                                    <Database className="w-5 h-5 text-slate-400"/>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-slate-200 text-sm truncate">{item.fileName || "بدون نام"}</p>
+                                                                <p className="text-slate-500 text-xs truncate">
+                                                                    {item.withUser} · {formatBytes(item.bytes)}
+                                                                </p>
+                                                            </div>
+                                                            <div
+                                                                className={`w-[18px] h-[18px] rounded border flex items-center justify-center flex-shrink-0 ${
+                                                                    selected ? "bg-cyan-500 border-cyan-500" : "border-slate-500"
+                                                                }`}
+                                                            >
+                                                                {selected && <Check className="w-3 h-3 text-white"/>}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            <div className="h-20"/>
+                                        </div>
+
+                                        {selectedStorageItems.length > 0 && (
+                                            <div className="p-4 border-t border-slate-700/50 flex-shrink-0">
+                                                <button
+                                                    onClick={handleDeleteSelectedStorageItems}
+                                                    disabled={deletingStorage}
+                                                    className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                                                >
+                                                    {deletingStorage
+                                                        ? "در حال حذف..."
+                                                        : `حذف ${selectedStorageItems.length} مورد و آزاد کردن فضا`}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
                                 {settingsView === "language" && (
                                     <>
-                                        <SettingsSubHeader title="زبان برنامه" onBack={() => setSettingsView("main")} saving={settingsSaving}/>
+                                        <SettingsSubHeader title="زبان برنامه" onBack={() => setSettingsView("main")}
+                                                           saving={settingsSaving}/>
                                         <RadioOptionGroup
                                             value={language}
                                             onChange={handleLanguageChange}
                                             options={[
                                                 {value: "fa", label: "فارسی"},
                                                 {value: "en", label: "English"},
+                                                {value: "de", label: "Deutsch"},
                                             ]}
                                         />
                                     </>
@@ -1515,13 +2164,246 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "help" && (
                                     <>
+
                                         <SettingsSubHeader title="کمک" onBack={() => setSettingsView("main")}/>
                                         <div className="overflow-y-auto flex-1">
-                                            <SettingRow icon={HelpCircle} title="سوالات متداول"/>
-                                            <SettingRow icon={MailIcon} title="تماس با ما"/>
-                                            <SettingRow icon={Shield} title="سیاست حفظ حریم خصوصی"/>
-                                            <SettingRow icon={Info} title="درباره چتیفای" subtitle="نسخه ۱.۰.۰"/>
+                                            <SettingRow
+                                                icon={HelpCircle}
+                                                title="سوالات متداول"
+                                                onClick={() => setSettingsView("faq")}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
+                                            <SettingRow
+                                                icon={MailIcon}
+                                                title="تماس با ما"
+                                                onClick={() => setSettingsView("contact")}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
+                                            <SettingRow
+                                                icon={Shield}
+                                                title="سیاست حفظ حریم خصوصی"
+                                                onClick={() => setSettingsView("privacy_policy")}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
+                                            <SettingRow
+                                                icon={Info}
+                                                title="درباره چتیفای"
+                                                subtitle={`نسخه ${APP_VERSION}`}
+                                                onClick={() => setSettingsView("about")}
+                                                rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
+                                            />
                                             <div className="h-4"/>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* ============================== سوالات متداول ============================== */}
+                                {settingsView === "faq" && (
+                                    <>
+                                        <SettingsSubHeader title="سوالات متداول"
+                                                           onBack={() => setSettingsView("help")}/>
+                                        <div className="overflow-y-auto flex-1 py-2">
+                                            {FAQ_ITEMS.map((item, idx) => {
+                                                const isOpen = openFaqIndex === idx;
+                                                return (
+                                                    <div key={idx}
+                                                         className="mx-3 mb-2 rounded-xl bg-slate-900/40 overflow-hidden">
+                                                        <button
+                                                            onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
+                                                            className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-right"
+                                                        >
+                                                            <span
+                                                                className="text-sm text-slate-200 font-medium">{item.q}</span>
+                                                            <ChevronDown
+                                                                className={`w-4 h-4 text-cyan-400 flex-shrink-0 transition-transform duration-200 ${
+                                                                    isOpen ? "rotate-180" : ""
+                                                                }`}
+                                                            />
+                                                        </button>
+                                                        <div
+                                                            className={`grid transition-all duration-300 ease-in-out ${
+                                                                isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                                                            }`}
+                                                        >
+                                                            <div className="overflow-hidden">
+                                                                <p className="px-4 pb-3.5 text-slate-400 text-xs leading-relaxed">{item.a}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            <div className="h-4"/>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* ============================== تماس با ما ============================== */}
+                                {settingsView === "contact" && (
+                                    <>
+                                        <SettingsSubHeader title="تماس با ما" onBack={() => setSettingsView("help")}/>
+                                        <div className="overflow-y-auto flex-1">
+                                            <p className="px-4 pt-4 pb-2 text-slate-400 text-xs leading-relaxed">
+                                                هر سوال، مشکل یا پیشنهادی داشتی، از یکی از راه‌های زیر باهامون در ارتباط
+                                                باش. تیم پشتیبانی معمولاً ظرف
+                                                ۲۴ ساعت پاسخ می‌ده.
+                                            </p>
+
+                                            <a
+                                                href={`mailto:${SUPPORT_EMAIL}`}
+                                                className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-700/40 transition-colors"
+                                            >
+                                                <div
+                                                    className="flex items-center justify-center h-9 w-9 rounded-full bg-slate-700/60 text-cyan-400 flex-shrink-0">
+                                                    <MailIcon className="h-4.5 w-4.5"/>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-slate-200">ایمیل پشتیبانی</p>
+                                                    <p className="text-slate-500 text-xs mt-0.5" dir="ltr">
+                                                        {SUPPORT_EMAIL}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        navigator.clipboard?.writeText(SUPPORT_EMAIL);
+                                                        toast.success("ایمیل کپی شد");
+                                                    }}
+                                                    className="text-slate-500 hover:text-slate-300 flex-shrink-0 p-1.5"
+                                                >
+                                                    <Copy className="w-3.5 h-3.5"/>
+                                                </button>
+                                            </a>
+
+                                            <a
+                                                href={SUPPORT_TELEGRAM}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-700/40 transition-colors"
+                                            >
+                                                <div
+                                                    className="flex items-center justify-center h-9 w-9 rounded-full bg-slate-700/60 text-sky-400 flex-shrink-0">
+                                                    <TelegramIcon className="h-4.5 w-4.5"/>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-slate-200">پشتیبانی در
+                                                        تلگرام</p>
+                                                    <p className="text-slate-500 text-xs mt-0.5">پاسخ سریع‌تر برای
+                                                        مشکلات فوری</p>
+                                                </div>
+                                                <ExternalLink className="w-3.5 h-3.5 text-slate-500 flex-shrink-0"/>
+                                            </a>
+
+                                            <div className="h-4"/>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* ============================== سیاست حفظ حریم خصوصی ============================== */}
+                                {settingsView === "privacy_policy" && (
+                                    <>
+                                        <SettingsSubHeader title="سیاست حفظ حریم خصوصی"
+                                                           onBack={() => setSettingsView("help")}/>
+                                        <div
+                                            className="overflow-y-auto flex-1 px-4 py-4 space-y-4 text-slate-400 text-xs leading-relaxed">
+                                            <p className="text-slate-500">آخرین بروزرسانی: مرداد ۱۴۰۴</p>
+
+                                            <div>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۱. چه
+                                                    اطلاعاتی جمع‌آوری می‌کنیم</h4>
+                                                <p>
+                                                    شماره موبایل یا ایمیل، نام نمایشی، عکس پروفایل، و پیام‌هایی که برای
+                                                    ارسال از طریق سرویس ما رد و
+                                                    بدل می‌کنی. لوکیشن فقط زمانی ذخیره می‌شه که خودت صریحاً از طریق
+                                                    دکمه‌ی اشتراک لوکیشن بفرستیش.
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۲. چطور
+                                                    ازشون استفاده می‌کنیم</h4>
+                                                <p>
+                                                    این اطلاعات فقط برای ارائه‌ی سرویس چت (تحویل پیام، اعلان‌ها، مدیریت
+                                                    مخاطبین) استفاده می‌شن. هیچ
+                                                    داده‌ای به شخص ثالث برای اهداف تبلیغاتی فروخته نمی‌شه.
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۳. مسدودسازی
+                                                    و گزارش</h4>
+                                                <p>
+                                                    وقتی کاربری رو مسدود می‌کنی، اون کاربر دیگه نمی‌تونه پیام یا تماسی
+                                                    برات بفرسته. گزارش‌هایی که ثبت
+                                                    می‌کنی محرمانه بررسی می‌شن و فقط برای اقدامات مدیریتی استفاده می‌شن.
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۴. حذف
+                                                    حساب</h4>
+                                                <p>
+                                                    با حذف حساب از بخش تنظیمات، تمام پیام‌ها، مخاطبین و اطلاعات پروفایلت
+                                                    به‌صورت دائمی از سرور حذف
+                                                    می‌شه و برگشت‌ناپذیره.
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۵. تماس</h4>
+                                                <p>
+                                                    برای هر سوالی درباره‌ی حریم خصوصی، از بخش «تماس با ما» با تیم
+                                                    پشتیبانی در ارتباط باش.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* ============================== درباره چتیفای ============================== */}
+                                {settingsView === "about" && (
+                                    <>
+                                        <SettingsSubHeader title="درباره چتیفای"
+                                                           onBack={() => setSettingsView("help")}/>
+                                        <div
+                                            className="overflow-y-auto flex-1 flex flex-col items-center px-6 py-8 text-center">
+                                            <div
+                                                className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-cyan-700 flex items-center justify-center shadow-lg shadow-cyan-500/20 mb-4">
+                                                <span className="text-white text-3xl font-bold">چ</span>
+                                            </div>
+                                            <h3 className="text-slate-100 text-lg font-semibold">چتیفای</h3>
+                                            <p className="text-slate-500 text-xs mt-1">نسخه {APP_VERSION}</p>
+
+                                            <p className="text-slate-400 text-xs leading-relaxed mt-4 max-w-xs">
+                                                چتیفای یه پیام‌رسان سریع، امن و ساده‌ست که با هدف ارتباط راحت‌تر بین
+                                                دوستان و تیم‌ها ساخته شده.
+                                            </p>
+
+                                            <div className="w-full mt-6 space-y-2">
+                                                <a
+                                                    href={SUPPORT_TELEGRAM}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-slate-900/50 text-slate-300 text-sm hover:bg-slate-900/80 transition-colors"
+                                                >
+                                                    <TelegramIcon className="w-4 h-4"/>
+                                                    کانال تلگرام
+                                                </a>
+                                                <a
+                                                    href="https://github.com/mohammadmatin2000"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-slate-900/50 text-slate-300 text-sm hover:bg-slate-900/80 transition-colors"
+                                                >
+                                                    <Github className="w-4 h-4"/>
+                                                    گیت‌هاب پروژه
+                                                </a>
+                                            </div>
+
+                                            <p className="flex items-center gap-1 text-slate-600 text-[11px] mt-8">
+                                                <Heart className="w-3 h-3 fill-red-500 text-red-500"/>ساخته‌شده با متین
+                                                در ایران<Heart className="w-3 h-3 fill-red-500 text-red-500"/>
+                                            </p>
                                         </div>
                                     </>
                                 )}
@@ -1533,5 +2415,6 @@ function ProfileHeader({onNewGroup}) {
         </div>
     );
 }
+
 
 export default ProfileHeader;

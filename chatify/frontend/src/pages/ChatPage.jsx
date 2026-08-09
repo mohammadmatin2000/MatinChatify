@@ -15,11 +15,13 @@ import ChannelChatContainer from "../components/ChannelChatContainer";
 import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 import {Search, X} from "lucide-react";
 import CallsList from "../components/CallsList";
+import useDesktopNotifications from "../hooks/useDesktopNotifications";
 
 const PULL_THRESHOLD = 55; // مقدار کششی که برای باز شدن کامل لازمه (px)
 const MAX_PULL = 90; // حداکثر مقداری که اجازه می‌دیم بکشه
 
 function ChatPage() {
+    useDesktopNotifications();
     const {activeTab, selectedUser, selectedGroup, setSelectedGroup} = useChatStore();
     const {selectedChannel, setSelectedChannel} = useChannelStore();
     // ✅ NEW: برای کوچک‌کردن خودکار تماس فعال وقتی گفتگو عوض می‌شه

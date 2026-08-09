@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
+import { useSettingsStore } from "../store/useSettingsStore";
 import ChatHeader from "./ChatHeader";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import MessageInput from "./MessageInput";
@@ -15,6 +16,23 @@ import { FileTextIcon, MapPinIcon, UserIcon, DownloadIcon, XIcon, Pin, Star, Che
 const API_BASE_URL = "http://localhost:8000";
 
 const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_BASE_URL}${url}`);
+
+// ✅ NEW: نگاشت گزینه‌ی پس‌زمینه‌ی انتخاب‌شده در تنظیمات به کلاس واقعی Tailwind
+const WALLPAPER_CLASSES = {
+  default: "",
+  slate: "bg-slate-800/40",
+  cyan_gradient: "bg-gradient-to-br from-cyan-950/70 via-slate-900 to-slate-900",
+  violet_gradient: "bg-gradient-to-br from-violet-950/70 via-slate-900 to-slate-900",
+  emerald_gradient: "bg-gradient-to-br from-emerald-950/70 via-slate-900 to-slate-900",
+  dots: "bg-slate-900 bg-[radial-gradient(circle,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:16px_16px]",
+};
+
+// ✅ NEW: نگاشت اندازه‌ی فونت انتخاب‌شده به کلاس متن
+const FONT_SIZE_CLASSES = {
+  small: "text-xs",
+  medium: "text-sm",
+  large: "text-base",
+};
 
 function ChatContainer() {
   const {
@@ -36,6 +54,10 @@ function ChatContainer() {
   } = useChatStore();
 
   const { authUser } = useAuthStore();
+  // ✅ NEW: پس‌زمینه‌ی چت + اندازه‌ی فونت از تنظیمات
+  const { chatWallpaper, fontSize } = useSettingsStore();
+  const wallpaperClass = WALLPAPER_CLASSES[chatWallpaper] || "";
+
   const messageEndRef = useRef(null);
 
   const [editingMessageId, setEditingMessageId] = useState(null);
@@ -311,19 +333,24 @@ function ChatContainer() {
     }
 
     if (type === "file" && msg.file) {
-      return (
+    return (
         <a
-          href={resolveUrl(msg.file)}
-          target="_blank"
-          rel="noopener noreferrer"
-          download
-          className="flex items-center gap-2 bg-black/20 hover:bg-black/30 rounded-lg p-2 transition-colors"
+            href={resolveUrl(msg.file)}
+            target="_blank"
+            rel="noopener noreferrer"
+            download
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 bg-black/20 hover:bg-black/30 rounded-lg p-2 transition-colors"
         >
-          <FileTextIcon className="w-5 h-5 flex-shrink-0" />
-          <span className="text-sm truncate max-w-[180px]">{msg.fileName || "فایل"}</span>
-          <DownloadIcon className="w-4 h-4 flex-shrink-0 opacity-70" />
-        </a>
-      );
+            <FileTextIcon className="w-5 h-5 flex-shrink-0" />
+
+            <span className="text-sm truncate max-w-[180px]">
+                {msg.fileName || "فایل"}
+            </span>
+
+            <DownloadIcon className="w-4 h-4 flex-shrink-0 opacity-70" />
+            </a>
+        );
     }
 
     return null;
@@ -333,7 +360,8 @@ function ChatContainer() {
     <>
       <ChatHeader />
 
-      <div className="flex-1 px-6 overflow-y-auto py-8">
+      {/* ✅ NEW: پس‌زمینه‌ی چت از تنظیمات اعمال می‌شه */}
+      <div className={`flex-1 px-6 overflow-y-auto py-8 ${wallpaperClass}`}>
         {isMessagesLoading ? (
           <MessagesLoadingSkeleton />
         ) : messages.length === 0 ? (
@@ -384,9 +412,7 @@ function ChatContainer() {
               return (
                 <div key={msg._id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
                   <div
-                    className={`chat-bubble relative select-none ${
-                      isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"
-                    }`}
+
                     style={{ touchAction: "manipulation" }}
                     onClick={(e) => {
                       if (msg.messageType === "poll") return;

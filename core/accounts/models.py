@@ -54,7 +54,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     type = models.IntegerField(
         choices=UserType.choices, default=UserType.customer.value
     )
-
+    last_seen = models.DateTimeField(null=True, blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
 
@@ -72,6 +72,7 @@ class Profile(models.Model):
     )
     first_name = models.CharField(max_length=255,blank=True, null=True)
     last_name = models.CharField(max_length=255,blank=True, null=True)
+    bio = models.CharField(max_length=140, blank=True, null=True, default="در دسترس")
     image = models.ImageField(
         upload_to="profile/", default="profile/default.png", blank=True, null=True
     )

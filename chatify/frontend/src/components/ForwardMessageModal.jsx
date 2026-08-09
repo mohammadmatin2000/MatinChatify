@@ -1,7 +1,8 @@
 import { XIcon, MessageCircleIcon, UsersIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useChatStore } from "../store/useChatStore";
-import { useChannelStore } from "../store/useChannelStore"; // ✅ FIX: برای پاک کردن selectedChannel
+import { useChannelStore } from "../store/useChannelStore";
+import useTranslation from "../hooks/useTranslation";
 import toast from "react-hot-toast";
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -13,10 +14,6 @@ const resolveUrl = (url) => {
   return url.startsWith("http") ? url : `${API_BASE_URL}${url}`;
 };
 
-// ✅ NEW: فرستادن پیام به یه گروه از طریق یه WebSocket موقت — بدون نیاز به
-// اینکه کاربر واقعاً اون گروه رو باز/انتخاب کرده باشه (برخلاف چت خصوصی که
-// از سوکت اصلی useChatStore استفاده می‌کنه، گروه‌ها سوکت جدا به‌ازای هر
-// گروه دارن، پس یه سوکت موقت می‌سازیم، پیام رو می‌فرستیم، و می‌بندیمش)
 function sendToGroupViaTempSocket(groupId, payload) {
   return new Promise((resolve, reject) => {
     const token = localStorage.getItem("accessToken");
@@ -32,7 +29,6 @@ function sendToGroupViaTempSocket(groupId, payload) {
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ action: "message", ...payload }));
-      // یه لحظه صبر می‌کنیم تا مطمئن بشیم پیام واقعاً روی سیم رفته، بعد می‌بندیم
       setTimeout(() => {
         clearTimeout(timeout);
         ws.close();
@@ -47,11 +43,10 @@ function sendToGroupViaTempSocket(groupId, payload) {
   });
 }
 
-// فوروارد پیام به یکی از مخاطبین چت خصوصی، یا یکی از گروه‌ها
 function ForwardMessageModal({ isOpen, onClose, message }) {
   const { allContacts, getAllContacts, setSelectedUser, setSelectedGroup } = useChatStore();
-  // ✅ FIX: لازم داریم تا موقع سوییچ به مخاطب انتخابی، چنل فعلی رو پاک کنیم
   const { setSelectedChannel } = useChannelStore();
+  const { t } = useTranslation();
   const [sendingId, setSendingId] = useState(null);
   const [activeTab, setActiveTab] = useState("contacts"); // "contacts" | "groups"
   const [groups, setGroups] = useState([]);
@@ -72,7 +67,7 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
       .then((res) => setGroups(Array.isArray(res.data) ? res.data : res.data?.results || []))
       .catch((err) => {
         console.error("❌ خطا در گرفتن لیست گروه‌ها:", err);
-        toast.error("گرفتن لیست گروه‌ها ممکن نشد");
+        toast.error(t("forward.groupsFetchFailed"));
       })
       .finally(() => setIsGroupsLoading(false));
   }, [isOpen, activeTab]);
@@ -104,44 +99,37 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
     const contactId = contact._id || contact.id;
     setSendingId(contactId);
     try {
-      // ✅ FIX: قبل از سوییچ به این مخاطب، انتخاب فعلی گروه/چنل رو پاک
-      // می‌کنیم — وگرنه (مثلاً وقتی داخل یه چنل هستی و از اینجا فوروارد
-      // می‌کنی) selectedUser و selectedChannel هر دو با هم true می‌مونن و
-      // ChatPage هر دو کانتینر رو همزمان رندر می‌کنه (همون باگ «دو صفحه»)
       setSelectedGroup(null);
       setSelectedChannel(null);
       setSelectedUser(contact);
       const socket = await waitForSocket();
       if (!socket || socket.readyState !== WebSocket.OPEN) {
-        toast.error("اتصال چت برقرار نشد — خودت این چت رو باز کن و دوباره امتحان کن");
+        toast.error(t("forward.failedNoOpenChat"));
         return;
       }
 
       await useChatStore.getState().sendMessage(buildPayload());
 
-      toast.success(`پیام برای ${contact.name} فوروارد شد`);
+      toast.success(t("forward.sentToContact", { name: contact.name }));
       onClose();
     } catch (err) {
       console.error("خطا در فوروارد پیام:", err);
-      toast.error("فوروارد ممکن نشد");
+      toast.error(t("forward.failed"));
     } finally {
       setSendingId(null);
     }
   };
 
-  // ✅ NEW: فوروارد به گروه — از سوکت موقت استفاده می‌کنه (این مسیر خودش
-  // selectedGroup/selectedChannel رو تغییر نمی‌ده، پس مشکل «دو صفحه» رو
-  // نداره — فقط handleForwardToContact این مشکل رو داشت)
   const handleForwardToGroup = async (group) => {
     const groupId = group.id;
     setSendingId(`group-${groupId}`);
     try {
       await sendToGroupViaTempSocket(groupId, buildPayload());
-      toast.success(`پیام برای گروه «${group.name}» فوروارد شد`);
+      toast.success(t("forward.sentToGroup", { name: group.name }));
       onClose();
     } catch (err) {
       console.error("خطا در فوروارد به گروه:", err);
-      toast.error("فوروارد به گروه ممکن نشد");
+      toast.error(t("forward.failedGroup"));
     } finally {
       setSendingId(null);
     }
@@ -157,13 +145,12 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
-          <h3 className="text-slate-100 font-semibold text-base">فوروارد به...</h3>
+          <h3 className="text-slate-100 font-semibold text-base">{t("forward.title")}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <XIcon className="w-5 h-5" />
           </button>
         </div>
 
-        {/* ✅ NEW: تب‌های مخاطبین / گروه‌ها */}
         <div className="flex border-b border-slate-700/50 flex-shrink-0">
           <button
             onClick={() => setActiveTab("contacts")}
@@ -172,7 +159,7 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
             }`}
           >
             <MessageCircleIcon className="w-3.5 h-3.5" />
-            مخاطبین
+            {t("forward.contactsTab")}
           </button>
           <button
             onClick={() => setActiveTab("groups")}
@@ -181,14 +168,14 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
             }`}
           >
             <UsersIcon className="w-3.5 h-3.5" />
-            گروه‌ها
+            {t("forward.groupsTab")}
           </button>
         </div>
 
         <div className="overflow-y-auto flex-1">
           {activeTab === "contacts" &&
             (allContacts.length === 0 ? (
-              <p className="text-center text-slate-500 text-sm py-8">مخاطبی نداری</p>
+              <p className="text-center text-slate-500 text-sm py-8">{t("forward.noContacts")}</p>
             ) : (
               allContacts.map((c) => {
                 const cid = c._id || c.id;
@@ -215,7 +202,7 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
                       />
                     </div>
                     <span className="text-slate-200 text-sm truncate flex-1">{c.name}</span>
-                    {sendingId === cid && <span className="text-xs text-cyan-400 flex-shrink-0">در حال ارسال...</span>}
+                    {sendingId === cid && <span className="text-xs text-cyan-400 flex-shrink-0">{t("forward.sending")}</span>}
                   </button>
                 );
               })
@@ -223,9 +210,9 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
 
           {activeTab === "groups" &&
             (isGroupsLoading ? (
-              <p className="text-center text-slate-500 text-sm py-8">در حال بارگذاری...</p>
+              <p className="text-center text-slate-500 text-sm py-8">{t("forward.loadingGroups")}</p>
             ) : groups.length === 0 ? (
-              <p className="text-center text-slate-500 text-sm py-8">تو هیچ گروهی عضو نیستی</p>
+              <p className="text-center text-slate-500 text-sm py-8">{t("forward.noGroups")}</p>
             ) : (
               groups.map((g) => {
                 const sendKey = `group-${g.id}`;
@@ -249,7 +236,7 @@ function ForwardMessageModal({ isOpen, onClose, message }) {
                       )}
                     </div>
                     <span className="text-slate-200 text-sm truncate flex-1">{g.name}</span>
-                    {sendingId === sendKey && <span className="text-xs text-cyan-400 flex-shrink-0">در حال ارسال...</span>}
+                    {sendingId === sendKey && <span className="text-xs text-cyan-400 flex-shrink-0">{t("forward.sending")}</span>}
                   </button>
                 );
               })

@@ -119,6 +119,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "image",
+            "bio",
         ]
 # ======================================================================================================================
 class RequestOTPSerializer(serializers.Serializer):

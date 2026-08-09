@@ -1,13 +1,36 @@
-import { XIcon, PhoneIcon, VideoIcon } from "lucide-react";
+import { XIcon, PhoneIcon, VideoIcon, ClockIcon  } from "lucide-react";
+
 import { useChatStore } from "../store/useChatStore";
 import { useCallStore } from "../store/useCallStore";
 import ChatHeaderMenu from "./ChatHeaderMenu";
+import useTranslation from "../hooks/useTranslation";
+
 import { useEffect } from "react";
+
+// ✅ NEW: فرمت «آخرین بازدید» به فارسی، شبیه واتساب
+function formatLastSeen(isoString) {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  const now = new Date();
+
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const time = date.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
+
+  if (isToday) return `آخرین بازدید امروز ساعت ${time}`;
+  if (isYesterday) return `آخرین بازدید دیروز ساعت ${time}`;
+
+  const dateStr = date.toLocaleDateString("fa-IR", { day: "numeric", month: "long" });
+  return `آخرین بازدید ${dateStr}`;
+}
 
 function ChatHeader() {
   const { selectedUser, setSelectedUser, onlineUsers, blockStatus } = useChatStore();
-  // ✅ NEW: برای شروع تماس صوتی/تصویری با همین مخاطب باز شده
   const { startCall, callStatus } = useCallStore();
+  const { t } = useTranslation();
 
   const isOnline = selectedUser
     ? onlineUsers.some((id) => String(id) === String(selectedUser.id || selectedUser._id))
@@ -35,9 +58,13 @@ function ChatHeader() {
     ? `http://localhost:8000${selectedUser.raw.profile}`
     : "/avatar.png";
 
-  // ✅ NEW: اگه هر کدوم از دو طرف دیگری رو بلاک کرده باشه، تماس غیرفعال می‌شه
   const isBlockedEitherWay = blockStatus.iBlockedThem || blockStatus.theyBlockedMe;
   const canCall = callStatus === "idle" && !isBlockedEitherWay;
+
+  // ✅ NEW: آخرین بازدید از raw.last_seen (که سریالایزر/سوکت مخاطبین برمی‌گردونه)
+  const lastSeenText = !isOnline
+    ? formatLastSeen(selectedUser.raw?.last_seen || selectedUser.last_seen)
+    : null;
 
   const handleAudioCall = () => {
     if (!canCall) return;
@@ -77,21 +104,32 @@ function ChatHeader() {
 
         <div>
           <h3 className="text-slate-100 font-medium">{selectedUser.name}</h3>
-          <p className="text-sm text-slate-400">
-            {/* ✅ NEW: اگه بلاک شده باشه، به‌جای آنلاین/آفلاین وضعیت بلاک نشون داده می‌شه */}
-            {blockStatus.iBlockedThem
-              ? "مسدود شده"
-              : blockStatus.theyBlockedMe
-              ? "امکان ارسال پیام نیست"
-              : isOnline
-              ? "آنلاین"
-              : "آفلاین"}
-          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {blockStatus.iBlockedThem ? (
+              <span className="text-xs text-red-400/90">{t("chatHeader.blocked")}</span>
+            ) : blockStatus.theyBlockedMe ? (
+              <span className="text-xs text-red-400/90">{t("chatHeader.cannotMessage")}</span>
+            ) : isOnline ? (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
+                </span>
+                {t("common.online")}
+              </span>
+            ) : lastSeenText ? (
+              <span className="flex items-center gap-1 text-xs text-slate-500">
+                <ClockIcon className="w-3 h-3" />
+                {lastSeenText}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-500">{t("common.offline")}</span>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        {/* ✅ تماس صوتی — دایره‌ی cyan با هاله‌ی نرم موقع hover */}
         <button
           onClick={handleAudioCall}
           disabled={!canCall}
@@ -101,12 +139,11 @@ function ChatHeader() {
                      active:scale-90
                      disabled:opacity-30 disabled:hover:bg-cyan-500/10 disabled:hover:shadow-none disabled:active:scale-100
                      transition-all duration-200"
-          title="تماس صوتی"
+          title={t("chatHeader.audioCall")}
         >
           <PhoneIcon className="w-[18px] h-[18px] transition-transform duration-200 group-hover:scale-110" />
         </button>
 
-        {/* ✅ تماس تصویری — دایره‌ی بنفش برای تمایز بصری از تماس صوتی */}
         <button
           onClick={handleVideoCall}
           disabled={!canCall}
@@ -116,15 +153,13 @@ function ChatHeader() {
                      active:scale-90
                      disabled:opacity-30 disabled:hover:bg-violet-500/10 disabled:hover:shadow-none disabled:active:scale-100
                      transition-all duration-200"
-          title="تماس تصویری"
+          title={t("chatHeader.videoCall")}
         >
           <VideoIcon className="w-[18px] h-[18px] transition-transform duration-200 group-hover:scale-110" />
         </button>
 
-        {/* جداکننده‌ی ظریف قبل از منوی بیشتر */}
         <span className="w-px h-6 bg-slate-700/60 mx-1" />
 
-        {/* ✅ NEW: منوی مسدودسازی/گزارش */}
         <ChatHeaderMenu userId={selectedUser.id || selectedUser._id} userName={selectedUser.name} />
 
         <button
@@ -132,7 +167,7 @@ function ChatHeader() {
           className="group w-10 h-10 rounded-full flex items-center justify-center
                      text-slate-400 hover:text-slate-100 hover:bg-slate-700/50
                      active:scale-90 transition-all duration-200"
-          title="بستن گفتگو"
+          title={t("chatHeader.closeChat")}
         >
           <XIcon className="w-[18px] h-[18px] transition-transform duration-200 group-hover:rotate-90" />
         </button>

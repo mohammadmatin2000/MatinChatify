@@ -1,23 +1,28 @@
 from django.conf import settings as django_settings
 from django.db import models
 # ======================================================================================================================
-
 class VisibilityChoices(models.TextChoices):
     EVERYONE = "everyone", "Everyone"
     CONTACTS = "contacts", "My Contacts"
     NOBODY = "nobody", "Nobody"
 # ======================================================================================================================
-
 class FontSizeChoices(models.TextChoices):
     SMALL = "small", "Small"
     MEDIUM = "medium", "Medium"
     LARGE = "large", "Large"
 # ======================================================================================================================
-
+class WallpaperChoices(models.TextChoices):
+    DEFAULT = "default", "پیش‌فرض"
+    SLATE = "slate", "سرمه‌ای ساده"
+    CYAN_GRADIENT = "cyan_gradient", "گرادیان فیروزه‌ای"
+    VIOLET_GRADIENT = "violet_gradient", "گرادیان بنفش"
+    EMERALD_GRADIENT = "emerald_gradient", "گرادیان سبز"
+    DOTS = "dots", "نقطه‌چین"
+# ======================================================================================================================
 class LanguageChoices(models.TextChoices):
     FA = "fa", "فارسی"
-    EN = "en", "English"
-
+    EN = "en", "انگلیسی"
+    DE = "de", "آلمانی"
 # ======================================================================================================================
 class UserSettings(models.Model):
     user = models.OneToOneField(
@@ -55,6 +60,10 @@ class UserSettings(models.Model):
     dark_theme = models.BooleanField(default=True)
     enter_to_send = models.BooleanField(default=True)
     font_size = models.CharField(max_length=10, choices=FontSizeChoices.choices, default=FontSizeChoices.MEDIUM)
+    chat_wallpaper = models.CharField(
+        max_length=20, choices=WallpaperChoices.choices, default=WallpaperChoices.DEFAULT
+    )
+    last_backup_date = models.DateTimeField(null=True, blank=True)
 
     # ---- Storage & data ----
     auto_download_wifi = models.BooleanField(default=True)
@@ -63,8 +72,8 @@ class UserSettings(models.Model):
     # ---- Language ----
     language = models.CharField(max_length=5, choices=LanguageChoices.choices, default=LanguageChoices.FA)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "User Settings"

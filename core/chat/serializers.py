@@ -4,19 +4,19 @@ from accounts.models import User, Profile
 from django.db.models import Q
 # ======================================================================================================================
 class ContactSerializer(serializers.ModelSerializer):
-    """فقط برای خروجی/نمایش لیست مخاطبین"""
     name = serializers.SerializerMethodField()
     phone_number = serializers.CharField(source="contact.phone_number", read_only=True)
     contact_email = serializers.EmailField(source="contact.email", read_only=True)
+    # ✅ NEW
+    last_seen = serializers.DateTimeField(source="contact.last_seen", read_only=True)
     profile = serializers.SerializerMethodField()
     user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = ContactModels
-        fields = ['id', 'user', 'contact', 'phone_number', 'contact_email', 'display_name', 'name', 'profile']
+        fields = ['id', 'user', 'contact', 'phone_number', 'contact_email', 'display_name', 'name', 'profile', 'last_seen']
 
     def get_name(self, obj):
-        # اولویت با اسمی که خودِ کاربر ذخیره کرده، بعد اسم واقعی پروفایل، در آخر ایمیل/شماره
         if obj.display_name:
             return obj.display_name
         profile = getattr(obj.contact, "user_profile", None)

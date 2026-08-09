@@ -16,8 +16,6 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         self.channel_id = int(self.scope["url_route"]["kwargs"]["channel_id"])
         self.group_name = f"channel_{self.channel_id}"
         self.user = self.scope.get("user")
-        print("CONNECT STAR")
-        print(self.scope)
 
         if not self.user or self.user.is_anonymous:
             await self.close(code=4001)
@@ -30,7 +28,6 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
-        print("ACCEPTING CONNECTION")
         await self.accept()
 
         await self.channel_layer.group_send(
@@ -69,7 +66,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             await self.handle_edit_message(data)
         elif action == "delete_message":
             await self.handle_delete_message(data)
-        elif action == "vote_poll":  # ✅ NEW
+        elif action == "vote_poll":
             await self.handle_vote_poll(data)
         # اکشن‌های ناشناخته سایلنت نادیده گرفته می‌شن
 
@@ -82,12 +79,8 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         image_base64 = data.get("image")
         file_base64 = data.get("file")
         file_name = data.get("fileName")
-        # ✅ FIX: meta اضافه شد — بدون این، پیام‌های لوکیشن/مخاطب/نظرسنجی
-        # (که فقط meta دارن، نه متن/عکس/فایل) اصلاً پردازش نمی‌شدن
         meta = data.get("meta")
 
-        # ✅ FIX: meta هم توی چک "پیام خالیه؟" لحاظ شد، وگرنه لوکیشن/مخاطب/
-        # نظرسنجی همیشه اینجا ساکت return می‌شدن
         if not text and not image_base64 and not file_base64 and not meta:
             return
 
@@ -118,6 +111,26 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             self.group_name,
             {"type": "chat_message", "message": message_data},
         )
+
+        # ✅ NEW: نوتیف مرکزی به تمام مشترکین چنل (به‌جز خود ادمین ارسال‌کننده)
+        # برای دسکتاپ‌نوتیفیکیشن، دقیقاً هم‌ساختار با ChatConsumer
+        member_ids = await self.get_member_ids()
+        channel_info = await self.get_channel_info()
+        notify_payload = {
+            **message_data,
+            "chatType": "channel",
+            "chatId": self.channel_id,
+            "chatName": channel_info["name"],
+            "senderName": self.serialize_user(self.user).get("email")
+            or self.serialize_user(self.user).get("phone_number"),
+        }
+        for uid in member_ids:
+            if uid == self.user.id:
+                continue
+            await self.channel_layer.group_send(
+                f"user_{uid}",
+                {"type": "new_message_notify", "message": notify_payload},
+            )
 
     # -------------------------
     # ویرایش پیام (فقط نویسنده‌ی پیام)
@@ -165,7 +178,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         )
 
     # -------------------------
-    # ✅ NEW: رأی دادن به نظرسنجی (هر عضوی، نه فقط ادمین‌ها، می‌تونه رأی بده)
+    # رأی دادن به نظرسنجی (هر عضوی، نه فقط ادمین‌ها، می‌تونه رأی بده)
     # -------------------------
     async def handle_vote_poll(self, data):
         message_id = data.get("messageId")
@@ -233,6 +246,19 @@ class ChannelConsumer(AsyncWebsocketConsumer):
         ).first()
         return member.role if member else None
 
+    # ✅ NEW: لیست user_id تمام اعضا/مشترکین چنل (برای فن‌اوت نوتیف)
+    @database_sync_to_async
+    def get_member_ids(self):
+        return list(
+            ChannelMember.objects.filter(channel_id=self.channel_id).values_list("user_id", flat=True)
+        )
+
+    # ✅ NEW: اسم چنل، برای عنوان نوتیف
+    @database_sync_to_async
+    def get_channel_info(self):
+        channel = ChannelModels.objects.get(id=self.channel_id)
+        return {"name": channel.name}
+
     @database_sync_to_async
     def save_message(self, text, message_type="text", image_base64=None, file_base64=None, file_name=None, meta=None):
         channel = ChannelModels.objects.get(id=self.channel_id)
@@ -249,8 +275,6 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             ext = (file_name.split(".")[-1] if file_name and "." in file_name else "bin")
             doc_file = ContentFile(base64.b64decode(filestr), name=f"{uuid.uuid4()}.{ext}")
 
-        # ✅ NEW: برای پیام‌های poll، به هر آپشن یه id بده و لیست voters خالی بساز
-        # (دقیقاً هماهنگ با منطق chat/consumers.py برای نظرسنجی خصوصی)
         if message_type == "poll" and meta and "options" in meta:
             meta = {
                 "question": meta.get("question", ""),
@@ -269,7 +293,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             image=image_file,
             file=doc_file,
             file_name=file_name if doc_file else None,
-            meta=meta,  # ✅ FIX: قبلاً اصلاً پاس داده نمی‌شد
+            meta=meta,
         )
 
         return self._serialize_message(message)
@@ -289,7 +313,6 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             raise PermissionDeniedError()
         message.delete()
 
-    # ✅ NEW: منطق رأی‌گیری — دقیقاً هماهنگ با chat/consumers.py برای چت خصوصی
     @database_sync_to_async
     def vote_poll(self, message_id, option_id):
         message = ChannelMessage.objects.get(id=message_id, channel_id=self.channel_id, message_type="poll")
@@ -336,8 +359,7 @@ class ChannelConsumer(AsyncWebsocketConsumer):
             "image": message.image.url if message.image else None,
             "file": message.file.url if message.file else None,
             "fileName": message.file_name,
-            "meta": message.meta,  # ✅ FIX: قبلاً اصلاً برنمی‌گشت، برای همین
-            # پیام زنده‌ی لوکیشن/مخاطب/نظرسنجی حتی اگه ذخیره می‌شد، تو UI خالی می‌موند
+            "meta": message.meta,
             "sender": self.serialize_user(message.sender),
             "created_date": message.created_date.isoformat(),
         }
