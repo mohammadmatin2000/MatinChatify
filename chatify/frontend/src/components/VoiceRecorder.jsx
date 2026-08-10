@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { MicIcon, VideoIcon, TrashIcon, LockIcon } from "lucide-react";
+import useTranslation from "../hooks/useTranslation";
 
-const CANCEL_THRESHOLD = 80; // پیکسل — چقدر باید بکشی چپ تا لغو بشه
-const LOCK_THRESHOLD = 60; // پیکسل — چقدر باید بکشی بالا تا قفل بشه (دیگه نیازی به نگه‌داشتن نیست)
+const CANCEL_THRESHOLD = 80;
+const LOCK_THRESHOLD = 60;
 
 function formatDuration(seconds) {
   const m = Math.floor(seconds / 60);
@@ -10,13 +11,9 @@ function formatDuration(seconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/**
- * props:
- * - onSend(blob, messageType) => وقتی ضبط با موفقیت تموم و باید ارسال بشه
- * - disabled
- */
 function VoiceRecorder({ onSend, disabled = false }) {
-  const [mode, setMode] = useState("voice"); // "voice" | "video_note"
+  const { t } = useTranslation();
+  const [mode, setMode] = useState("voice");
   const [isRecording, setIsRecording] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -32,8 +29,6 @@ function VoiceRecorder({ onSend, disabled = false }) {
   const startYRef = useRef(0);
   const cancelledRef = useRef(false);
   const videoPreviewNodeRef = useRef(null);
-  // ✅ FIX: قفل جلوگیری از شروع دوباره‌ی ضبط — یه ref (نه state) چون باید
-  // همون لحظه (سینکرون، بدون منتظر re-render) مقدارش عوض بشه.
   const isRecordingRef = useRef(false);
 
   useEffect(() => {
@@ -50,10 +45,6 @@ function VoiceRecorder({ onSend, disabled = false }) {
     }
   };
 
-  // ✅ FIX: callback ref به‌جای ref معمولی — هر بار که المان ویدیو (چه اول
-  // ضبط، چه بعد از قفل‌شدن که دکمه‌ها عوض می‌شن و ویدیو دوباره mount
-  // می‌شه) توی DOM ظاهر بشه، فوراً استریم زنده بهش وصل می‌شه. با ref
-  // معمولی، بعد از mount دوباره (مثلاً موقع قفل کردن) تصویر خالی می‌موند.
   const attachVideoPreview = useCallback((node) => {
     videoPreviewNodeRef.current = node;
     if (node && streamRef.current) {
@@ -62,8 +53,6 @@ function VoiceRecorder({ onSend, disabled = false }) {
   }, []);
 
   const startRecording = async (clientX, clientY) => {
-    // ✅ FIX: چک از روی ref (نه state) — جلوی هر گونه فراخوانی دوباره رو
-    // همون لحظه می‌گیره، حتی اگه به هر دلیلی این تابع دوبار صدا زده بشه.
     if (disabled || isRecordingRef.current) return;
     isRecordingRef.current = true;
 
@@ -120,16 +109,13 @@ function VoiceRecorder({ onSend, disabled = false }) {
       setDragX(0);
       setDragY(0);
 
-      // ✅ FIX: قبلاً همین setInterval گاهی دوبار ساخته می‌شد (چون
-      // startRecording دوبار صدا زده می‌شد). الان با isRecordingRef این
-      // اتفاق اصلاً نمی‌افته، پس این تایمر همیشه دقیقاً یکی می‌مونه.
       clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setDuration((prev) => prev + 1);
       }, 1000);
     } catch (err) {
       console.error("خطا در دسترسی به میکروفون/دوربین:", err);
-      alert("دسترسی به میکروفون یا دوربین امکان‌پذیر نبود");
+      alert(t("voice.accessFailed"));
       isRecordingRef.current = false;
     }
   };
@@ -150,13 +136,12 @@ function VoiceRecorder({ onSend, disabled = false }) {
     }
   };
 
-  // ---- کشیدن برای لغو/قفل — الان از رویدادهای Pointer یکپارچه استفاده می‌کنه ----
   const handleMove = useCallback(
     (clientX, clientY) => {
       if (!isRecordingRef.current || isLocked) return;
 
-      const deltaX = startXRef.current - clientX; // مثبت یعنی به چپ کشیده شده (RTL)
-      const deltaY = startYRef.current - clientY; // مثبت یعنی به بالا کشیده شده
+      const deltaX = startXRef.current - clientX;
+      const deltaY = startYRef.current - clientY;
 
       if (deltaY > LOCK_THRESHOLD) {
         setIsLocked(true);
@@ -179,9 +164,6 @@ function VoiceRecorder({ onSend, disabled = false }) {
   useEffect(() => {
     if (!isRecording) return;
 
-    // ✅ FIX: به‌جای گوش‌دادن جدا به mouse و touch، فقط pointer events —
-    // چون یک مدل یکپارچه‌ست، امکان فایر شدن دوباره‌ی رویداد برای همون
-    // تعامل فیزیکی از اساس وجود نداره.
     const onPointerMove = (e) => handleMove(e.clientX, e.clientY);
     const onPointerUp = () => {
       if (!isLocked) finishRecording(false);
@@ -201,8 +183,6 @@ function VoiceRecorder({ onSend, disabled = false }) {
     };
   }, [isRecording, isLocked, handleMove]);
 
-  // ✅ FIX: تنها یک هندلر (onPointerDown) — دیگه onMouseDown/onTouchStart
-  // جدا نیستن که باعث فراخوانی دوبل بشن.
   const handlePointerDown = (e) => {
     e.preventDefault();
     startRecording(e.clientX, e.clientY);
@@ -213,16 +193,12 @@ function VoiceRecorder({ onSend, disabled = false }) {
     setMode((prev) => (prev === "voice" ? "video_note" : "voice"));
   };
 
-  // ---------------- حالت در حال ضبط ----------------
   if (isRecording) {
     const cancelOpacity = Math.max(0, 1 - dragX / CANCEL_THRESHOLD);
     const isVideoMode = mode === "video_note" && showVideoPreview;
 
     return (
       <div className="flex items-center gap-3 flex-1 relative">
-        {/* ✅ FIX: قبلاً تصویر زنده فقط داخل همون دکمه‌ی کوچیک ۴۴ پیکسلی
-            بود. الان دقیقاً مثل تلگرام، یه دایره‌ی بزرگ شناور بالای نوار
-            پیام میاد که خودتو واضح نشون بده، مستقل از سایز دکمه‌ی ضبط. */}
         {isVideoMode && (
           <div className="fixed bottom-[92px] left-1/2 -translate-x-1/2 z-[150] pointer-events-none">
             <div className="w-52 h-52 sm:w-60 sm:h-60 rounded-full overflow-hidden ring-4 ring-cyan-500/50 shadow-2xl bg-slate-900">
@@ -246,7 +222,7 @@ function VoiceRecorder({ onSend, disabled = false }) {
 
           {!isLocked ? (
             <div className="flex-1 flex items-center justify-center gap-1 text-slate-400 text-xs" style={{ opacity: cancelOpacity }}>
-              <span>برای لغو بکش چپ</span>
+              <span>{t("voice.dragToCancel")}</span>
               <TrashIcon className="w-3.5 h-3.5" />
             </div>
           ) : (
@@ -260,7 +236,7 @@ function VoiceRecorder({ onSend, disabled = false }) {
               type="button"
               onClick={() => finishRecording(true)}
               className="w-9 h-9 rounded-full bg-slate-700 hover:bg-red-500/80 flex items-center justify-center transition-colors flex-shrink-0"
-              title="لغو"
+              title={t("voice.cancel")}
             >
               <TrashIcon className="w-4 h-4 text-slate-200" />
             </button>
@@ -268,7 +244,7 @@ function VoiceRecorder({ onSend, disabled = false }) {
               type="button"
               onClick={() => finishRecording(false)}
               className="w-11 h-11 rounded-full bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 flex items-center justify-center transition-all flex-shrink-0"
-              title="ارسال"
+              title={t("common.send")}
             >
               {isVideoMode ? <VideoIcon className="w-5 h-5 text-white" /> : <MicIcon className="w-5 h-5 text-white" />}
             </button>
@@ -296,25 +272,23 @@ function VoiceRecorder({ onSend, disabled = false }) {
     );
   }
 
-  // ---------------- حالت آماده (قبل از ضبط) ----------------
   return (
     <div className="flex items-center gap-3 flex-shrink-0">
       <button
         type="button"
         onClick={toggleMode}
         className="rounded-lg px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white flex items-center justify-center transition-all flex-shrink-0"
-        title={mode === "voice" ? "تغییر به پیام ویدیویی" : "تغییر به پیام صوتی"}
+        title={mode === "voice" ? t("voice.switchToVideo") : t("voice.switchToVoice")}
       >
         {mode === "voice" ? <VideoIcon className="w-5 h-5" /> : <MicIcon className="w-5 h-5" />}
       </button>
 
-      {/* ✅ FIX: فقط onPointerDown — دیگه onMouseDown/onTouchStart جدا نیستن */}
       <button
         type="button"
         onPointerDown={handlePointerDown}
         disabled={disabled}
         className="rounded-lg px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-shrink-0"
-        title={mode === "voice" ? "نگه دار و صحبت کن" : "نگه دار و فیلم بگیر"}
+        title={mode === "voice" ? t("voice.holdToTalk") : t("voice.holdToFilm")}
       >
         {mode === "voice" ? <MicIcon className="w-5 h-5" /> : <VideoIcon className="w-5 h-5" />}
       </button>

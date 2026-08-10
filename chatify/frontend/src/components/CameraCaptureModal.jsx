@@ -1,14 +1,13 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { XIcon, CameraIcon, SendIcon, RefreshCwIcon, SwitchCameraIcon } from "lucide-react";
+import useTranslation from "../hooks/useTranslation";
 
-// دوربین واقعی داخل اپ — با getUserMedia استریم زنده می‌گیره، عکس رو
-// روی canvas می‌کشه و به‌صورت File برمی‌گردونه. دقیقاً رفتار واتساب:
-// پیش‌نمایش زنده → گرفتن عکس → دوباره‌بگیر یا ارسال.
 function CameraCaptureModal({ isOpen, onClose, onCapture }) {
+  const { t } = useTranslation();
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [capturedImage, setCapturedImage] = useState(null); // { blob, url }
+  const [capturedImage, setCapturedImage] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
   const [error, setError] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -36,13 +35,12 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
       }
     } catch (err) {
       console.error("خطا در دسترسی به دوربین:", err);
-      setError("دسترسی به دوربین ممکن نشد. مطمئن شو مجوز دوربین رو به مرورگر دادی.");
+      setError(t("camera.accessFailed"));
     } finally {
       setIsStarting(false);
     }
-  }, [facingMode, stopStream]);
+  }, [facingMode, stopStream, t]);
 
-  // باز شدن مودال یا تعویض دوربین جلو/عقب → استریم رو (دوباره) راه بنداز
   useEffect(() => {
     if (!isOpen) {
       stopStream();
@@ -54,7 +52,6 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, facingMode]);
 
-  // آزاد کردن حافظه‌ی URL موقتی عکس گرفته‌شده
   useEffect(() => {
     return () => {
       if (capturedImage?.url) URL.revokeObjectURL(capturedImage.url);
@@ -78,7 +75,7 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         setCapturedImage({ blob, url });
-        stopStream(); // بعد از گرفتن عکس، دوربین رو خاموش کن تا چراغش نسوزه
+        stopStream();
       },
       "image/jpeg",
       0.92
@@ -113,12 +110,11 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
 
   return createPortal(
     <div className="fixed inset-0 z-[200] bg-black flex flex-col">
-      {/* هدر شناور */}
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/70 to-transparent absolute top-0 left-0 right-0 z-10">
         <button
           onClick={handleClose}
           className="w-9 h-9 rounded-full bg-black/40 flex items-center justify-center text-white"
-          title="بستن"
+          title={t("common.close")}
         >
           <XIcon className="w-5 h-5" />
         </button>
@@ -126,14 +122,13 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
           <button
             onClick={toggleFacingMode}
             className="w-9 h-9 rounded-full bg-black/40 flex items-center justify-center text-white"
-            title="تعویض دوربین"
+            title={t("camera.switch")}
           >
             <SwitchCameraIcon className="w-5 h-5" />
           </button>
         )}
       </div>
 
-      {/* محتوای اصلی: استریم زنده یا عکسِ گرفته‌شده */}
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
         {error ? (
           <div className="text-center text-slate-300 px-6">
@@ -143,23 +138,22 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
               onClick={startStream}
               className="mt-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm text-white transition-colors"
             >
-              تلاش دوباره
+              {t("camera.retry")}
             </button>
           </div>
         ) : capturedImage ? (
-          <img src={capturedImage.url} alt="عکس گرفته‌شده" className="max-h-full max-w-full object-contain" />
+          <img src={capturedImage.url} alt="" className="max-h-full max-w-full object-contain" />
         ) : (
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
         )}
 
         {isStarting && !error && !capturedImage && (
           <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
-            در حال روشن کردن دوربین...
+            {t("camera.starting")}
           </div>
         )}
       </div>
 
-      {/* کنترل‌های پایین */}
       <div className="px-6 py-6 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-center gap-10">
         {capturedImage ? (
           <>
@@ -167,13 +161,13 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
               <div className="w-14 h-14 rounded-full bg-slate-700/80 flex items-center justify-center">
                 <RefreshCwIcon className="w-6 h-6" />
               </div>
-              <span className="text-xs">دوباره بگیر</span>
+              <span className="text-xs">{t("camera.retake")}</span>
             </button>
             <button onClick={handleSend} className="flex flex-col items-center gap-1.5 text-white">
               <div className="w-14 h-14 rounded-full bg-cyan-600 hover:bg-cyan-500 flex items-center justify-center transition-colors">
                 <SendIcon className="w-6 h-6" />
               </div>
-              <span className="text-xs">ارسال</span>
+              <span className="text-xs">{t("common.send")}</span>
             </button>
           </>
         ) : (
@@ -182,7 +176,7 @@ function CameraCaptureModal({ isOpen, onClose, onCapture }) {
               onClick={handleCapture}
               disabled={isStarting}
               className="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform"
-              title="گرفتن عکس"
+              title={t("camera.capture")}
             >
               <span className="w-12 h-12 rounded-full bg-white" />
             </button>

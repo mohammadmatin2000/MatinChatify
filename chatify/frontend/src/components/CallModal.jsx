@@ -17,6 +17,7 @@ import {
 import { useCallStore } from "../store/useCallStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
+import useTranslation from "../hooks/useTranslation";
 
 const API_BASE_URL = "http://localhost:8000";
 
@@ -31,6 +32,7 @@ function AddParticipantModal({ isOpen, onClose, excludeIds }) {
   const { allContacts, getAllContacts } = useChatStore();
   const { authUser } = useAuthStore();
   const { addParticipant } = useCallStore();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (isOpen) getAllContacts();
@@ -69,7 +71,7 @@ function AddParticipantModal({ isOpen, onClose, excludeIds }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
-          <h3 className="text-slate-100 font-semibold text-base">افزودن به تماس</h3>
+          <h3 className="text-slate-100 font-semibold text-base">{t("call.addToCall")}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <XIcon className="w-5 h-5" />
           </button>
@@ -77,7 +79,7 @@ function AddParticipantModal({ isOpen, onClose, excludeIds }) {
 
         <div className="overflow-y-auto flex-1">
           {availableContacts.length === 0 ? (
-            <p className="text-center text-slate-500 text-sm py-8">مخاطب دیگه‌ای برای افزودن نیست</p>
+            <p className="text-center text-slate-500 text-sm py-8">{t("call.noMoreContacts")}</p>
           ) : (
             availableContacts.map((c) => {
               const profilePic = c.profile?.startsWith("http")
@@ -130,6 +132,7 @@ function CallModal() {
   } = useCallStore();
 
   const { setSelectedUser, setActiveTab, allContacts } = useChatStore();
+  const { t } = useTranslation();
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -139,7 +142,6 @@ function CallModal() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  // ✅ NEW: کنترل باز/بسته بودن مودال افزودن عضو
   const [showAddParticipant, setShowAddParticipant] = useState(false);
 
   useEffect(() => {
@@ -200,9 +202,6 @@ function CallModal() {
     setIsMinimized(true);
   };
 
-  // ✅ FIX: قبلاً اینجا alert("...فعلاً پشتیبانی نمی‌شود") بود. الان مودال
-  // انتخاب مخاطب باز می‌شه و انتخاب واقعاً از useCallStore.addParticipant
-  // (که تماس فعلی رو به یه تماس چندنفره‌ی ad-hoc تبدیل می‌کنه) رد می‌شه.
   const handleAddParticipant = () => {
     if (callStatus !== "connected" && callStatus !== "calling") return;
     setShowAddParticipant(true);
@@ -211,7 +210,7 @@ function CallModal() {
   if (callStatus === "idle") return null;
 
   const remoteImage = remoteUser?.image || "/avatar.png";
-  const remoteName = remoteUser?.name || "کاربر";
+  const remoteName = remoteUser?.name || t("common.user");
   const canAddParticipant = callStatus === "connected" || callStatus === "calling";
 
   if (isMinimized) {
@@ -229,7 +228,7 @@ function CallModal() {
         <div className="min-w-0">
           <p className="text-slate-100 text-xs font-semibold truncate max-w-[110px]">{remoteName}</p>
           <p className="text-slate-400 text-[11px]">
-            {callStatus === "connected" ? formatElapsed(elapsed) : "در حال تماس..."}
+            {callStatus === "connected" ? formatElapsed(elapsed) : t("call.calling")}
           </p>
         </div>
         <button
@@ -238,7 +237,7 @@ function CallModal() {
             endCall(true);
           }}
           className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center flex-shrink-0"
-          title="پایان تماس"
+          title={t("call.end")}
         >
           <PhoneOffIcon className="w-4 h-4 text-white" />
         </button>
@@ -259,7 +258,7 @@ function CallModal() {
         <button
           onClick={() => setIsMinimized(true)}
           className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-          title="کوچک کردن"
+          title={t("call.minimize")}
         >
           <Minimize2Icon className="w-[18px] h-[18px] text-white" />
         </button>
@@ -267,8 +266,8 @@ function CallModal() {
         <div className="flex flex-col items-center">
           <h2 className="text-slate-100 text-base font-semibold">{remoteName}</h2>
           <p className="text-slate-300 text-xs mt-0.5">
-            {callStatus === "calling" && "در حال تماس..."}
-            {callStatus === "ringing" && "در حال تماس با شما..."}
+            {callStatus === "calling" && t("call.calling")}
+            {callStatus === "ringing" && t("call.ringingIncoming")}
             {callStatus === "connected" && formatElapsed(elapsed)}
           </p>
         </div>
@@ -278,14 +277,14 @@ function CallModal() {
             onClick={handleAddParticipant}
             disabled={!canAddParticipant}
             className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:hover:bg-white/10 flex items-center justify-center transition-colors"
-            title="افزودن عضو"
+            title={t("member.add")}
           >
             <UserPlusIcon className="w-[18px] h-[18px] text-white" />
           </button>
           <button
             onClick={handleOpenChat}
             className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-            title="ارسال پیام"
+            title={t("call.sendMessage")}
           >
             <MessageCircleIcon className="w-[18px] h-[18px] text-white" />
           </button>
@@ -322,14 +321,14 @@ function CallModal() {
             <button
               onClick={rejectCall}
               className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-colors shadow-lg"
-              title="رد تماس"
+              title={t("call.reject")}
             >
               <PhoneOffIcon className="w-6 h-6 text-white" />
             </button>
             <button
               onClick={acceptCall}
               className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center transition-colors shadow-lg"
-              title="قبول تماس"
+              title={t("call.accept")}
             >
               <PhoneIcon className="w-6 h-6 text-white" />
             </button>
@@ -341,7 +340,7 @@ function CallModal() {
                 <button
                   onClick={() => setShowMoreMenu((v) => !v)}
                   className="w-12 h-12 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 text-white transition-colors"
-                  title="گزینه‌های بیشتر"
+                  title={t("chatHeader.moreOptions")}
                 >
                   <MoreHorizontalIcon className="w-5 h-5" />
                 </button>
@@ -354,7 +353,7 @@ function CallModal() {
                       }}
                       className="w-full text-right px-3 py-2 text-slate-200 hover:bg-slate-700/60 transition-colors"
                     >
-                      {isSpeakerOn ? "کاهش صدا" : "افزایش صدا"}
+                      {isSpeakerOn ? t("call.speakerDown") : t("call.speakerUp")}
                     </button>
                   </div>
                 )}
@@ -366,7 +365,7 @@ function CallModal() {
                   className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                     isCameraOff ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20 text-white"
                   }`}
-                  title={isCameraOff ? "روشن کردن دوربین" : "قطع دوربین"}
+                  title={isCameraOff ? t("call.cameraOn") : t("call.cameraOff")}
                 >
                   {isCameraOff ? <VideoOffIcon className="w-5 h-5" /> : <VideoIcon className="w-5 h-5" />}
                 </button>
@@ -376,7 +375,7 @@ function CallModal() {
                   className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                     isSpeakerOn ? "bg-white/10 hover:bg-white/20 text-white" : "bg-white text-slate-900"
                   }`}
-                  title={isSpeakerOn ? "کاهش صدای بلندگو" : "افزایش صدای بلندگو"}
+                  title={isSpeakerOn ? t("call.speakerDown") : t("call.speakerUp")}
                 >
                   {isSpeakerOn ? <Volume2Icon className="w-5 h-5" /> : <VolumeXIcon className="w-5 h-5" />}
                 </button>
@@ -387,7 +386,7 @@ function CallModal() {
                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                   isMicMuted ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20 text-white"
                 }`}
-                title={isMicMuted ? "روشن کردن میکروفون" : "قطع میکروفون"}
+                title={isMicMuted ? t("call.micOn") : t("call.micOff")}
               >
                 {isMicMuted ? <MicOffIcon className="w-5 h-5" /> : <MicIcon className="w-5 h-5" />}
               </button>
@@ -395,7 +394,7 @@ function CallModal() {
               <button
                 onClick={() => endCall(true)}
                 className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-colors shadow-lg"
-                title="پایان تماس"
+                title={t("call.end")}
               >
                 <PhoneOffIcon className="w-6 h-6 text-white" />
               </button>
@@ -404,7 +403,6 @@ function CallModal() {
         )}
       </div>
 
-      {/* ✅ NEW */}
       <AddParticipantModal
         isOpen={showAddParticipant}
         onClose={() => setShowAddParticipant(false)}

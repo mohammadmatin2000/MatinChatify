@@ -15,17 +15,16 @@ import ChannelChatContainer from "../components/ChannelChatContainer";
 import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 import {Search, X} from "lucide-react";
 import CallsList from "../components/CallsList";
-import useDesktopNotifications from "../hooks/useDesktopNotifications";
+import useTranslation from "../hooks/useTranslation";
 
-const PULL_THRESHOLD = 55; // مقدار کششی که برای باز شدن کامل لازمه (px)
-const MAX_PULL = 90; // حداکثر مقداری که اجازه می‌دیم بکشه
+const PULL_THRESHOLD = 55;
+const MAX_PULL = 90;
 
 function ChatPage() {
-    useDesktopNotifications();
     const {activeTab, selectedUser, selectedGroup, setSelectedGroup} = useChatStore();
     const {selectedChannel, setSelectedChannel} = useChannelStore();
-    // ✅ NEW: برای کوچک‌کردن خودکار تماس فعال وقتی گفتگو عوض می‌شه
     const {callStatus, groupCallStatus, minimizeCall} = useCallStore();
+    const {t} = useTranslation();
 
     const [searchOpen, setSearchOpen] = useState(false);
     const [pullOffset, setPullOffset] = useState(0);
@@ -36,10 +35,6 @@ function ChatPage() {
     const dragStartY = useRef(0);
     const draggingRef = useRef(false);
 
-    // ✅ NEW: هر بار که «محل فعلی» (پیوی/گروه/چنل) عوض بشه، اگه یه تماس
-    // (۱به۱ یا گروهی) در حال انجامه، خودکار کوچیکش می‌کنیم — دیگه رو
-    // صفحه‌ی گفتگوی جدید کامل باز نمی‌مونه و دوتا صفحه هم‌زمان دیده
-    // نمی‌شه.
     useEffect(() => {
         const hasActiveCall =
             (callStatus !== "idle" && callStatus !== "ringing") ||
@@ -50,10 +45,8 @@ function ChatPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedUser, selectedGroup, selectedChannel]);
 
-    // شروع کشش (لمس یا موس)
     const handleDragStart = useCallback(
         (clientY) => {
-            // فقط وقتی اجازه بده که لیست بالای صفحه‌ست (اسکرول نشده) و سرچ هنوز باز نیست
             if (searchOpen) return;
             if (listRef.current && listRef.current.scrollTop > 0) return;
 
@@ -64,7 +57,6 @@ function ChatPage() {
         [searchOpen]
     );
 
-    // حرکت حین کشش
     const handleDragMove = useCallback((clientY) => {
         if (!draggingRef.current) return;
 
@@ -74,7 +66,6 @@ function ChatPage() {
         }
     }, []);
 
-    // پایان کشش
     const handleDragEnd = useCallback(() => {
         if (!draggingRef.current) return;
         draggingRef.current = false;
@@ -88,12 +79,10 @@ function ChatPage() {
         });
     }, []);
 
-    // --- رویدادهای لمسی (موبایل) ---
     const onTouchStart = (e) => handleDragStart(e.touches[0].clientY);
     const onTouchMove = (e) => handleDragMove(e.touches[0].clientY);
     const onTouchEnd = () => handleDragEnd();
 
-    // --- رویدادهای موس (دسکتاپ) ---
     const onMouseDown = (e) => {
         handleDragStart(e.clientY);
         const onMouseMove = (moveEvent) => handleDragMove(moveEvent.clientY);
@@ -119,7 +108,6 @@ function ChatPage() {
                     <ProfileHeader user={selectedUser || selectedGroup || selectedChannel}/>
                     <ActiveTabSwitch/>
 
-                    {/* دستگیره‌ی کشش + نوار سرچ */}
                     <div
                         className="relative overflow-hidden shrink-0"
                         style={{
@@ -127,7 +115,6 @@ function ChatPage() {
                             transition: isDragging ? "none" : "height 0.25s ease",
                         }}
                     >
-                        {/* دستگیره‌ی کوچیک راهنما (وقتی سرچ بسته‌ست) */}
                         {!searchOpen && (
                             <div
                                 onMouseDown={onMouseDown}
@@ -136,13 +123,12 @@ function ChatPage() {
                                 onTouchEnd={onTouchEnd}
                                 onClick={() => setSearchOpen(true)}
                                 className="absolute inset-x-0 top-0 flex items-center justify-center h-3.5 cursor-grab active:cursor-grabbing select-none"
-                                title="بکش پایین یا کلیک کن تا جستجو باز شود"
+                                title={t("chatPage.pullHint")}
                             >
                                 <div className="w-10 h-1.5 rounded-full bg-slate-500/60"/>
                             </div>
                         )}
 
-                        {/* نوار سرچ واقعی */}
                         {searchOpen && (
                             <div
                                 className="flex items-center gap-2 px-3 h-full bg-slate-800/70 border-b border-slate-700/60">
@@ -152,7 +138,7 @@ function ChatPage() {
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="جستجو..."
+                                    placeholder={t("search.placeholder")}
                                     className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 outline-none"
                                 />
                                 <button
@@ -165,7 +151,6 @@ function ChatPage() {
                         )}
                     </div>
 
-                    {/* لیست */}
                     <div
                         ref={listRef}
                         onMouseDown={!searchOpen ? onMouseDown : undefined}
@@ -184,10 +169,8 @@ function ChatPage() {
 
                 {/* Chat Area */}
                 <div className="flex-1 flex flex-col bg-slate-900/50 backdrop-blur-sm">
-                    {/* چت با یوزر */}
                     {selectedUser && <ChatContainer user={selectedUser}/>}
 
-                    {/* چت گروه */}
                     {selectedGroup && (
                         <GroupChatContainer
                             group={selectedGroup}
@@ -195,7 +178,6 @@ function ChatPage() {
                         />
                     )}
 
-                    {/* چت چنل */}
                     {selectedChannel && (
                         <ChannelChatContainer
                             channel={selectedChannel}
@@ -203,9 +185,8 @@ function ChatPage() {
                         />
                     )}
 
-                    {/* هیچ انتخابی نشده */}
                     {!selectedUser && !selectedGroup && !selectedChannel && (
-                        <NoConversationPlaceholder message="یک گفت‌وگو انتخاب کنید"/>
+                        <NoConversationPlaceholder message={t("noConversation.title")}/>
                     )}
                 </div>
             </BorderAnimatedContainer>

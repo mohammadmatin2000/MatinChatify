@@ -10,23 +10,22 @@ import {
   ShieldCheckIcon,
 } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
+import useTranslation from "../hooks/useTranslation";
 
 const OTP_RESEND_SECONDS = 60;
 
 function LoginPage() {
   const navigate = useNavigate();
   const { login, requestOtp, verifyOtp } = useAuthStore();
+  const { t } = useTranslation();
 
-  // "email" یا "phone"
   const [tab, setTab] = useState("email");
   const [error, setError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // فرم ایمیل
   const [emailForm, setEmailForm] = useState({ email: "", password: "" });
 
-  // فرم شماره — مرحله ۱: شماره، مرحله ۲: کد
-  const [phoneStep, setPhoneStep] = useState("phone"); // "phone" | "code"
+  const [phoneStep, setPhoneStep] = useState("phone");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -36,7 +35,6 @@ function LoginPage() {
   const switchTab = (nextTab) => {
     setTab(nextTab);
     setError("");
-    // ریست کامل حالت شماره وقتی برمی‌گردی به ایمیل
     if (nextTab === "email") {
       setPhoneStep("phone");
       setOtpCode("");
@@ -56,7 +54,6 @@ function LoginPage() {
     }, 1000);
   };
 
-  // ورود با ایمیل
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -64,15 +61,14 @@ function LoginPage() {
     const user = await login(emailForm.email, emailForm.password);
     setIsLoggingIn(false);
     if (user) navigate("/");
-    else setError("ورود انجام نشد. لطفاً اطلاعات خود را بررسی کنید.");
+    else setError(t("auth.loginFailed"));
   };
 
-  // مرحله ۱ شماره: ارسال کد
   const handleRequestOtp = async (e) => {
     e.preventDefault();
     setError("");
     if (!/^09\d{9}$/.test(phoneNumber)) {
-      setError("شماره موبایل معتبر نیست.");
+      setError(t("auth.invalidPhone"));
       return;
     }
     setIsSendingOtp(true);
@@ -84,7 +80,6 @@ function LoginPage() {
     }
   };
 
-  // مرحله ۲ شماره: تایید کد
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     setError("");
@@ -108,16 +103,14 @@ function LoginPage() {
         <BorderAnimatedContainer>
           <div className="w-full flex flex-col md:flex-row">
 
-            {/* فرم سمت راست */}
             <div className="md:w-1/2 p-8 flex items-center justify-center md:border-l border-slate-600/30">
               <div className="w-full max-w-md">
                 <div className="text-center mb-6">
                   <MessageCircleIcon className="w-12 h-12 mx-auto text-slate-400 mb-4" />
-                  <h2 className="text-2xl font-bold text-slate-200 mb-2">خوش آمدی!</h2>
-                  <p className="text-slate-400">برای ورود به حساب کاربری‌ات وارد شو</p>
+                  <h2 className="text-2xl font-bold text-slate-200 mb-2">{t("auth.welcomeBack")}</h2>
+                  <p className="text-slate-400">{t("auth.loginSubtitle")}</p>
                 </div>
 
-                {/* تب انتخاب روش ورود */}
                 <div className="flex mb-6 rounded-lg overflow-hidden border border-slate-600/30">
                   <button
                     type="button"
@@ -128,7 +121,7 @@ function LoginPage() {
                         : "bg-transparent text-slate-400"
                     }`}
                   >
-                    ورود با ایمیل
+                    {t("auth.loginWithEmail")}
                   </button>
                   <button
                     type="button"
@@ -139,17 +132,16 @@ function LoginPage() {
                         : "bg-transparent text-slate-400"
                     }`}
                   >
-                    ورود با شماره
+                    {t("auth.loginWithPhone")}
                   </button>
                 </div>
 
                 {error && <p className="text-red-500 text-sm text-center mb-4">{error}</p>}
 
-                {/* فرم ایمیل */}
                 {tab === "email" && (
                   <form onSubmit={handleEmailSubmit} className="space-y-6">
                     <div>
-                      <label className="auth-input-label">ایمیل</label>
+                      <label className="auth-input-label">{t("auth.email")}</label>
                       <div className="relative">
                         <MailIcon className="auth-input-icon" />
                         <input
@@ -166,7 +158,7 @@ function LoginPage() {
                     </div>
 
                     <div>
-                      <label className="auth-input-label">رمز عبور</label>
+                      <label className="auth-input-label">{t("auth.password")}</label>
                       <div className="relative">
                         <LockIcon className="auth-input-icon" />
                         <input
@@ -176,7 +168,7 @@ function LoginPage() {
                             setEmailForm({ ...emailForm, password: e.target.value })
                           }
                           className="input"
-                          placeholder="رمز عبور خود را وارد کنید"
+                          placeholder={t("auth.passwordPlaceholder")}
                           required
                         />
                       </div>
@@ -190,17 +182,16 @@ function LoginPage() {
                       {isLoggingIn ? (
                         <LoaderIcon className="w-5 h-5 animate-spin" />
                       ) : (
-                        "ورود"
+                        t("auth.loginBtn")
                       )}
                     </button>
                   </form>
                 )}
 
-                {/* فرم شماره - مرحله ۱: گرفتن شماره */}
                 {tab === "phone" && phoneStep === "phone" && (
                   <form onSubmit={handleRequestOtp} className="space-y-6">
                     <div>
-                      <label className="auth-input-label">شماره موبایل</label>
+                      <label className="auth-input-label">{t("auth.phoneNumber")}</label>
                       <div className="relative">
                         <PhoneIcon className="auth-input-icon" />
                         <input
@@ -223,25 +214,20 @@ function LoginPage() {
                       {isSendingOtp ? (
                         <LoaderIcon className="w-5 h-5 animate-spin" />
                       ) : (
-                        "ارسال کد تایید"
+                        t("auth.sendOtp")
                       )}
                     </button>
                   </form>
                 )}
 
-                {/* فرم شماره - مرحله ۲: تایید کد */}
                 {tab === "phone" && phoneStep === "code" && (
                   <form onSubmit={handleVerifyOtp} className="space-y-6">
                     <p className="text-slate-400 text-sm text-center">
-                      کد ارسال شده به شماره{" "}
-                      <span dir="ltr" className="text-slate-200">
-                        {phoneNumber}
-                      </span>{" "}
-                      را وارد کن
+                      {t("auth.otpSentTo", { phone: phoneNumber })}
                     </p>
 
                     <div>
-                      <label className="auth-input-label">کد تایید</label>
+                      <label className="auth-input-label">{t("auth.otpCode")}</label>
                       <div className="relative">
                         <ShieldCheckIcon className="auth-input-icon" />
                         <input
@@ -268,7 +254,7 @@ function LoginPage() {
                       {isVerifying ? (
                         <LoaderIcon className="w-5 h-5 animate-spin" />
                       ) : (
-                        "تایید و ورود"
+                        t("auth.verifyAndLogin")
                       )}
                     </button>
 
@@ -278,7 +264,7 @@ function LoginPage() {
                         onClick={() => setPhoneStep("phone")}
                         className="auth-link"
                       >
-                        تغییر شماره
+                        {t("auth.changeNumber")}
                       </button>
                       <button
                         type="button"
@@ -287,8 +273,8 @@ function LoginPage() {
                         className="auth-link disabled:opacity-40"
                       >
                         {resendTimer > 0
-                          ? `ارسال مجدد (${resendTimer})`
-                          : "ارسال مجدد کد"}
+                          ? t("auth.resendIn", { sec: resendTimer })
+                          : t("auth.resendCode")}
                       </button>
                     </div>
                   </form>
@@ -296,26 +282,25 @@ function LoginPage() {
 
                 <div className="mt-6 text-center">
                   <Link to="/signup" className="auth-link">
-                    حساب نداری؟ ثبت‌نام کن
+                    {t("auth.noAccount")}
                   </Link>
                 </div>
               </div>
             </div>
 
-            {/* تصویر سمت چپ */}
             <div className="hidden md:w-1/2 md:flex items-center justify-center p-6 bg-gradient-to-bl from-slate-800/20 to-transparent">
               <div>
                 <img
                   src="/login.png"
-                  alt="ورود به حساب کاربری"
+                  alt=""
                   className="w-full h-auto object-contain"
                 />
                 <div className="mt-6 text-center">
-                  <h3 className="text-xl font-medium text-cyan-400">در هر زمان و مکان متصل شو</h3>
+                  <h3 className="text-xl font-medium text-cyan-400">{t("auth.loginHeroTitle")}</h3>
                   <div className="mt-4 flex justify-center gap-4">
-                    <span className="auth-badge">رایگان</span>
-                    <span className="auth-badge">نصب آسان</span>
-                    <span className="auth-badge">امن و خصوصی</span>
+                    <span className="auth-badge">{t("auth.badgeFree")}</span>
+                    <span className="auth-badge">{t("auth.badgeEasyInstall")}</span>
+                    <span className="auth-badge">{t("auth.badgeSecure")}</span>
                   </div>
                 </div>
               </div>

@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
-import { faIR } from "date-fns/locale";
+import { faIR, enUS, de } from "date-fns/locale";
 import { Video, Phone, PhoneMissed, PhoneIncoming, PhoneOutgoing, Users } from "lucide-react";
 import axios from "axios";
 import { useAuthStore } from "../store/useAuthStore";
 import { useCallStore } from "../store/useCallStore";
+import useTranslation from "../hooks/useTranslation";
 
-function formatTime(date) {
+const DATE_LOCALES = { fa: faIR, en: enUS, de };
+
+function formatTime(date, locale) {
   if (!date) return "";
   if (isToday(date)) return format(date, "HH:mm");
-  return formatDistanceToNowStrict(date, { addSuffix: true, locale: faIR });
+  return formatDistanceToNowStrict(date, { addSuffix: true, locale });
 }
 
 function formatDuration(seconds) {
@@ -19,7 +22,6 @@ function formatDuration(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// تبدیل یه مسیر عکس (نسبی یا کامل) به آدرس قابل‌استفاده، با فال‌بک به آواتار پیش‌فرض
 function resolveImageUrl(path) {
   if (!path) return "/avatar.png";
   return path.startsWith("http") ? path : `http://localhost:8000${path}`;
@@ -28,6 +30,8 @@ function resolveImageUrl(path) {
 function CallsList() {
   const { authUser } = useAuthStore();
   const { startCall, startGroupCall, callStatus, groupCallStatus } = useCallStore();
+  const { t, language } = useTranslation();
+  const dateLocale = DATE_LOCALES[language] || faIR;
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,11 +72,9 @@ function CallsList() {
     fetchCalls();
   }, [authUser?.id]);
 
-  // ✅ NEW: شروع دوباره‌ی تماس با همون نوع (صوتی/تصویری) — دقیقاً مثل تب Calls واتساپ
   const handleCallBack = (call, e) => {
     e?.stopPropagation();
 
-    // اگه الان تو یه تماس دیگه‌ای هستیم، اجازه نده تماس جدید شروع بشه
     if (callStatus !== "idle" || groupCallStatus !== "idle") return;
 
     if (call.scope === "group") {
@@ -94,8 +96,8 @@ function CallsList() {
     }
   };
 
-  if (loading) return <p className="text-center text-slate-500 text-sm py-8">در حال بارگذاری...</p>;
-  if (calls.length === 0) return <p className="text-center text-slate-500 text-sm py-8">هنوز تماسی ثبت نشده</p>;
+  if (loading) return <p className="text-center text-slate-500 text-sm py-8">{t("common.loading")}</p>;
+  if (calls.length === 0) return <p className="text-center text-slate-500 text-sm py-8">{t("calls.empty")}</p>;
 
   return (
     <div className="flex flex-col gap-1.5 px-1">
@@ -124,7 +126,6 @@ function CallsList() {
         const TypeIcon = call.call_type === "video" ? Video : Phone;
         const durationLabel = formatDuration(call.duration);
 
-        // عکس پروفایل برای تماس خصوصی (کاربر مقابل) یا تماس گروهی (عکس گروه، اگه باشه)
         const profileImagePath = isGroup
           ? call.group_image
           : isOutgoing
@@ -134,13 +135,13 @@ function CallsList() {
 
         let statusLabel;
         if (isGroup) {
-          statusLabel = call.status === "no_answer" ? "بی‌پاسخ" : durationLabel || "پایان یافت";
+          statusLabel = call.status === "no_answer" ? t("calls.missed") : durationLabel || t("calls.ended");
         } else if (call.status === "missed") {
-          statusLabel = "بی‌پاسخ";
+          statusLabel = t("calls.missed");
         } else if (call.status === "rejected") {
-          statusLabel = "رد شد";
+          statusLabel = t("calls.rejected");
         } else {
-          statusLabel = durationLabel || "پاسخ داده شد";
+          statusLabel = durationLabel || t("calls.answered");
         }
 
         return (
@@ -178,13 +179,12 @@ function CallsList() {
 
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
               <span className="text-[11px] text-slate-500 whitespace-nowrap">
-                {formatTime(new Date(call.started_at))}
+                {formatTime(new Date(call.started_at), dateLocale)}
               </span>
-              {/* ✅ NEW: آیکون تماس — قابل کلیک برای گرفتن دوباره‌ی تماس با همون نوع */}
               <button
                 onClick={(e) => handleCallBack(call, e)}
                 className="p-1 rounded-full hover:bg-cyan-500/10 transition-colors"
-                title={call.call_type === "video" ? "تماس تصویری" : "تماس صوتی"}
+                title={call.call_type === "video" ? t("chatHeader.videoCall") : t("chatHeader.audioCall")}
               >
                 <TypeIcon className="w-4 h-4 text-cyan-400" />
               </button>

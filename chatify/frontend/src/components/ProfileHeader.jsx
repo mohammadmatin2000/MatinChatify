@@ -47,6 +47,7 @@ import CreateChannelModal from "./CreateChannelModal";
 import {useLanguageStore} from "../store/useLanguageStore";
 import {useSettingsStore} from "../store/useSettingsStore";
 import {LANGUAGES} from "../lib/translations";
+import useTranslation from "../hooks/useTranslation";
 import toast from "react-hot-toast";
 import axios from "axios";
 
@@ -164,7 +165,7 @@ function ProfileHeader({onNewGroup}) {
     const [isEditingBio, setIsEditingBio] = useState(false);
     const bioInputRef = useRef(null);
 
-
+    const { t } = useTranslation();
 
     const {disconnectCallSocket} = useCallStore();
 

@@ -7,11 +7,12 @@ import {useChannelStore} from "../store/useChannelStore";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import ForwardMessageModal from "./ForwardMessageModal";
+import useTranslation from "../hooks/useTranslation";
 import {
     XIcon, Radio, UsersIcon, UserPlusIcon, ShieldCheckIcon,
     MoreVertical, Trash2, ShieldMinus, Search,
     FileTextIcon, MapPinIcon, DownloadIcon, CheckIcon,
-    Link2Icon, CopyIcon, Share2Icon, GlobeIcon, LockIcon,
+    Link2Icon, Share2Icon, GlobeIcon, LockIcon,
 } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000";
@@ -31,6 +32,7 @@ function ChannelChatContainer({channel, onBack}) {
     const {authUser} = useAuthStore();
     const {searchResults, isSearching, searchUsers, clearSearch} = useChatStore();
     const {members, fetchMembers, isMembersLoading, addMember, updateMemberRole, removeMember} = useChannelStore();
+    const {t} = useTranslation();
 
     const [messages, setMessages] = useState([]);
     const [isMessagesLoading, setIsMessagesLoading] = useState(true);
@@ -50,11 +52,8 @@ function ChannelChatContainer({channel, onBack}) {
     const [openMenuMemberId, setOpenMenuMemberId] = useState(null);
     const debounceRef = useRef(null);
 
-    // ✅ NEW: وضعیت عمومی/خصوصی بودن چنل — چون channel از پراپس میاد (نه از
-    // استور)، محلی نگه‌ش می‌داریم تا بعد از تغییر، فوراً تو همین صفحه آپدیت بشه
     const [isPublicLocal, setIsPublicLocal] = useState(!!channel?.is_public);
     const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
-    // ✅ NEW: پیامی که قراره از طریق مودال فوروارد، به مخاطب/گروه فرستاده بشه
     const [shareAsMessage, setShareAsMessage] = useState(null);
 
     useEffect(() => {
@@ -62,10 +61,7 @@ function ChannelChatContainer({channel, onBack}) {
     }, [channel?.id, channel?.is_public]);
 
     const isAdmin = channel?.my_role === "admin";
-    const isOwner = channel?.owner === authUser?.id;
 
-    // لینک کامل دعوت — فرض کردم مسیر پیوستن /join/:code هست؛
-    // اگه مسیر واقعی پروژه‌ت فرق داره، بگو تا اصلاحش کنم
     const inviteLink = channel?.invite_code
         ? `${window.location.origin}/join/${channel.invite_code}`
         : null;
@@ -84,7 +80,7 @@ function ChannelChatContainer({channel, onBack}) {
         socketRef.current.onmessage = (e) => {
             const data = JSON.parse(e.data);
             if (data.type === "message") setMessages((prev) => [...prev, data]);
-            if (data.type === "error") toast.error(data.message || "خطا در ارسال پیام");
+            if (data.type === "error") toast.error(data.message || t("channel.sendError"));
             if (data.type === "delete_message") setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
             if (data.type === "edit_message")
                 setMessages((prev) => prev.map((m) => (m.id === data.messageId ? {...m, text: data.newText} : m)));
@@ -137,7 +133,7 @@ function ChannelChatContainer({channel, onBack}) {
 
     const sendMessage = async (payload = {}) => {
         if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-            toast.error("اتصال چنل برقرار نیست");
+            toast.error(t("channel.noConnection"));
             return;
         }
         const finalText = payload.text !== undefined ? payload.text : textRef.current;
@@ -180,7 +176,7 @@ function ChannelChatContainer({channel, onBack}) {
     const handleAddByPhone = async (e) => {
         e.preventDefault();
         if (!/^09\d{9}$/.test(addPhone)) {
-            toast.error("شماره موبایل معتبر نیست.");
+            toast.error(t("channel.invalidPhone"));
             return;
         }
         setIsAdding(true);
@@ -236,24 +232,14 @@ function ChannelChatContainer({channel, onBack}) {
 
     const handleCopyInviteCode = () => {
         navigator.clipboard.writeText(channel.invite_code);
-        toast.success("کد دعوت کپی شد");
+        toast.success(t("channel.codeCopied"));
     };
 
-    const handleCopyInviteLink = () => {
-        if (!inviteLink) return;
-        navigator.clipboard.writeText(inviteLink);
-        toast.success("لینک دعوت کپی شد");
-    };
-
-    // ✅ FIX: قبلاً از Web Share API استفاده می‌کرد (که فقط تو موبایل/مرورگرهای
-    // خاص کار می‌کنه)؛ حالا مستقیم مودال «فوروارد به...» رو باز می‌کنه تا لینک
-    // به‌عنوان یه پیام واقعی به مخاطب/گروه انتخابی همینجا تو پیام‌رسان بره
     const handleShareInvite = () => {
-    if (!channel?.invite_code) return;
-    setShareAsMessage({ text: channel.invite_code, messageType: "text" });
-};
+        if (!channel?.invite_code) return;
+        setShareAsMessage({ text: channel.invite_code, messageType: "text" });
+    };
 
-    // ✅ NEW: تغییر وضعیت عمومی/خصوصی چنل — با PATCH به همون endpoint ویو‌ست چنل
     const handleToggleVisibility = async () => {
         if (isTogglingVisibility) return;
         const nextValue = !isPublicLocal;
@@ -265,10 +251,10 @@ function ChannelChatContainer({channel, onBack}) {
                 {headers: {Authorization: `Bearer ${accessToken}`}}
             );
             setIsPublicLocal(nextValue);
-            toast.success(nextValue ? "چنل عمومی شد" : "چنل خصوصی شد");
+            toast.success(nextValue ? t("channel.becamePublic") : t("channel.becamePrivate"));
         } catch (err) {
             console.error("❌ خطا در تغییر وضعیت چنل:", err);
-            toast.error("تغییر وضعیت چنل انجام نشد");
+            toast.error(t("channel.visibilityFailed"));
         } finally {
             setIsTogglingVisibility(false);
         }
@@ -297,7 +283,7 @@ function ChannelChatContainer({channel, onBack}) {
                     className="flex items-center gap-2 bg-black/20 hover:bg-black/30 rounded-lg p-2 transition-colors"
                 >
                     <MapPinIcon className="w-5 h-5 flex-shrink-0"/>
-                    <span className="text-sm">مشاهده لوکیشن روی نقشه</span>
+                    <span className="text-sm">{t("location.viewOnMap")}</span>
                 </a>
             );
         }
@@ -352,7 +338,7 @@ function ChannelChatContainer({channel, onBack}) {
                             );
                         })}
                     </div>
-                    <p className="text-xs opacity-60 mt-1.5">{totalVotes} رأی</p>
+                    <p className="text-xs opacity-60 mt-1.5">{t("poll.totalVotes", { count: totalVotes })}</p>
                 </div>
             );
         }
@@ -367,7 +353,7 @@ function ChannelChatContainer({channel, onBack}) {
                     className="flex items-center gap-2 bg-black/20 hover:bg-black/30 rounded-lg p-2 transition-colors"
                 >
                     <FileTextIcon className="w-5 h-5 flex-shrink-0"/>
-                    <span className="text-sm truncate max-w-[180px]">{msg.fileName || msg.file_name || "فایل"}</span>
+                    <span className="text-sm truncate max-w-[180px]">{msg.fileName || msg.file_name || t("chatsList.file")}</span>
                     <DownloadIcon className="w-4 h-4 flex-shrink-0 opacity-70"/>
                 </a>
             );
@@ -400,14 +386,15 @@ function ChannelChatContainer({channel, onBack}) {
                             <Radio className="w-3.5 h-3.5 text-violet-400"/>
                         </h1>
                         <p className="text-slate-400 text-xs">
-                            {channel.members_count ?? 0} عضو {isAdmin && "· تو ادمینی"}
+                            {t("channelsList.membersCount", { count: channel.members_count ?? 0 })}
+                            {isAdmin && ` · ${t("channel.youAreAdmin")}`}
                         </p>
                     </div>
                 </button>
 
                 <div className="flex items-center gap-1">
                     <button onClick={() => setShowInfoPanel(true)}
-                            className="p-2 text-slate-400 hover:text-slate-200 transition-colors" title="اطلاعات چنل">
+                            className="p-2 text-slate-400 hover:text-slate-200 transition-colors" title={t("channel.info")}>
                         <UsersIcon className="w-5 h-5"/>
                     </button>
                     <button onClick={onBack} className="p-2">
@@ -422,7 +409,7 @@ function ChannelChatContainer({channel, onBack}) {
                 {isMessagesLoading ? (
                     <MessagesLoadingSkeleton/>
                 ) : messages.length === 0 ? (
-                    <p className="text-center text-slate-500 text-sm py-12">هنوز پیامی توی این چنل ارسال نشده</p>
+                    <p className="text-center text-slate-500 text-sm py-12">{t("channel.noMessages")}</p>
                 ) : (
                     <div className="max-w-3xl mx-auto space-y-4">
                         {messages.map((msg) => {
@@ -464,7 +451,7 @@ function ChannelChatContainer({channel, onBack}) {
                 <MessageInput text={text} setText={setText} sendMessage={sendMessage}/>
             ) : (
                 <div className="p-4 border-t border-slate-700/50 text-center text-slate-500 text-sm">
-                    فقط ادمین‌های این چنل می‌تونن پیام بذارن
+                    {t("channel.onlyAdminsCanPost")}
                 </div>
             )}
 
@@ -480,7 +467,7 @@ function ChannelChatContainer({channel, onBack}) {
                     >
                         <div
                             className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
-                            <h3 className="text-slate-100 font-semibold text-base">اطلاعات چنل</h3>
+                            <h3 className="text-slate-100 font-semibold text-base">{t("channel.info")}</h3>
                             <button onClick={() => setShowInfoPanel(false)}
                                     className="text-slate-400 hover:text-white transition-colors">
                                 <XIcon className="w-5 h-5"/>
@@ -491,7 +478,6 @@ function ChannelChatContainer({channel, onBack}) {
                             {channel.description &&
                                 <p className="text-slate-400 text-sm text-center mb-4">{channel.description}</p>}
 
-                            {/* ✅ NEW: سوییچ عمومی/خصوصی — فقط ادمین می‌بینه */}
                             {isAdmin && (
                                 <div className="flex items-center justify-between gap-3 bg-slate-900/40 rounded-2xl p-3.5 mb-4">
                                     <div className="flex items-center gap-2.5 min-w-0">
@@ -504,12 +490,12 @@ function ChannelChatContainer({channel, onBack}) {
                                         </div>
                                         <div className="min-w-0">
                                             <p className="text-slate-100 text-sm font-medium">
-                                                {isPublicLocal ? "چنل عمومی" : "چنل خصوصی"}
+                                                {isPublicLocal ? t("channel.publicTitle") : t("channel.privateTitle")}
                                             </p>
                                             <p className="text-slate-500 text-[11px] truncate">
                                                 {isPublicLocal
-                                                    ? "هرکی کد/لینک دعوت رو داشته باشه می‌تونه بپیونده"
-                                                    : "فقط ادمین می‌تونه مستقیم عضو اضافه کنه"}
+                                                    ? t("channel.publicDesc")
+                                                    : t("channel.privateDesc")}
                                             </p>
                                         </div>
                                     </div>
@@ -530,7 +516,6 @@ function ChannelChatContainer({channel, onBack}) {
                                 </div>
                             )}
 
-                            {/* کارت دعوت — فقط وقتی چنل عمومیه معنا داره (کد دعوت برای خصوصی کاربردی نیست) */}
                             {isAdmin && channel.invite_code && isPublicLocal && (
                                 <div className="relative overflow-hidden rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-600/25 via-fuchsia-600/10 to-slate-900/40 p-4 mb-4">
                                     <div
@@ -542,15 +527,14 @@ function ChannelChatContainer({channel, onBack}) {
                                             <Link2Icon className="w-4 h-4 text-white"/>
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-slate-100 text-sm font-semibold">لینک دعوت چنل</p>
-                                            <p className="text-slate-400 text-[11px] truncate">هرکی این لینک رو داشته
-                                                باشه می‌تونه بپیونده</p>
+                                            <p className="text-slate-100 text-sm font-semibold">{t("channel.inviteLinkTitle")}</p>
+                                            <p className="text-slate-400 text-[11px] truncate">{t("channel.inviteLinkDesc")}</p>
                                         </div>
                                     </div>
 
                                     <div className="relative flex items-center justify-between gap-2">
                                         <div className="flex items-center gap-1.5 min-w-0">
-                                            <span className="text-slate-500 text-[11px] flex-shrink-0">کد:</span>
+                                            <span className="text-slate-500 text-[11px] flex-shrink-0">{t("channel.codeLabel")}</span>
                                             <code
                                                 className="text-slate-200 text-xs font-mono tracking-wider bg-slate-900/60 px-2 py-0.5 rounded truncate"
                                                 dir="ltr">
@@ -560,7 +544,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                 onClick={handleCopyInviteCode}
                                                 className="text-violet-400 hover:text-violet-300 text-[11px] font-medium transition-colors flex-shrink-0"
                                             >
-                                                کپی
+                                                {t("common.copy")}
                                             </button>
                                         </div>
                                         <button
@@ -568,7 +552,7 @@ function ChannelChatContainer({channel, onBack}) {
                                             className="flex items-center gap-1 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
                                         >
                                             <Share2Icon className="w-3.5 h-3.5"/>
-                                            اشتراک
+                                            {t("common.share")}
                                         </button>
                                     </div>
                                 </div>
@@ -577,13 +561,15 @@ function ChannelChatContainer({channel, onBack}) {
                             {isAdmin ? (
                                 <>
                                     <div className="flex items-center justify-between mb-2 px-1">
-                                        <p className="text-slate-400 text-xs">{isMembersLoading ? "..." : `${members.length} عضو`}</p>
+                                        <p className="text-slate-400 text-xs">
+                                            {isMembersLoading ? t("common.loading") : t("channelsList.membersCount", { count: members.length })}
+                                        </p>
                                         <button
                                             onClick={openAddMember}
                                             className="flex items-center gap-1 text-violet-400 hover:text-violet-300 text-xs font-medium transition-colors"
                                         >
                                             <UserPlusIcon className="w-3.5 h-3.5"/>
-                                            افزودن عضو
+                                            {t("member.add")}
                                         </button>
                                     </div>
 
@@ -596,7 +582,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                         addMemberTab === "phone" ? "text-violet-400 border-b-2 border-violet-400" : "text-slate-400"
                                                     }`}
                                                 >
-                                                    با شماره
+                                                    {t("addMember.byPhone")}
                                                 </button>
                                                 <button
                                                     onClick={() => setAddMemberTab("email")}
@@ -604,7 +590,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                         addMemberTab === "email" ? "text-violet-400 border-b-2 border-violet-400" : "text-slate-400"
                                                     }`}
                                                 >
-                                                    با ایمیل
+                                                    {t("addMember.byEmail")}
                                                 </button>
                                                 <button onClick={closeAddMember}
                                                         className="px-3 text-slate-500 hover:text-slate-300">
@@ -627,7 +613,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                         disabled={isAdding}
                                                         className="bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs px-3 rounded-lg transition-colors"
                                                     >
-                                                        افزودن
+                                                        {t("member.addBtn")}
                                                     </button>
                                                 </form>
                                             )}
@@ -642,17 +628,15 @@ function ChannelChatContainer({channel, onBack}) {
                                                             type="text"
                                                             value={addQuery}
                                                             onChange={(e) => handleAddQueryChange(e.target.value)}
-                                                            placeholder="ایمیل کاربر را وارد کنید..."
+                                                            placeholder={t("common.emailSearchPlaceholder")}
                                                             className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500"
                                                         />
                                                     </div>
                                                     <div className="max-h-40 overflow-y-auto space-y-1">
                                                         {isSearching &&
-                                                            <p className="text-center text-slate-500 text-xs py-2">در
-                                                                حال جستجو...</p>}
+                                                            <p className="text-center text-slate-500 text-xs py-2">{t("common.searching")}</p>}
                                                         {!isSearching && addQuery.trim() && searchResults.length === 0 && (
-                                                            <p className="text-center text-slate-500 text-xs py-2">کاربری
-                                                                یافت نشد</p>
+                                                            <p className="text-center text-slate-500 text-xs py-2">{t("common.noUserFound")}</p>
                                                         )}
                                                         {searchResults.map((user) => (
                                                             <div key={user.id}
@@ -673,7 +657,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                                     disabled={addingId === user.id}
                                                                     className="bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-[10px] px-2 py-1 rounded flex-shrink-0"
                                                                 >
-                                                                    {addingId === user.id ? "..." : "افزودن"}
+                                                                    {addingId === user.id ? "..." : t("member.addBtn")}
                                                                 </button>
                                                             </div>
                                                         ))}
@@ -706,7 +690,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                         <span
                                                             className="flex items-center gap-1 text-violet-400 text-xs flex-shrink-0">
                               <ShieldCheckIcon className="w-3.5 h-3.5"/>
-                              ادمین
+                                                            {t("group.admin")}
                             </span>
                                                     )}
 
@@ -731,7 +715,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                                                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 text-right"
                                                                             >
                                                                                 <ShieldMinus className="w-3.5 h-3.5"/>
-                                                                                عزل از ادمینی
+                                                                                {t("channel.demote")}
                                                                             </button>
                                                                         ) : (
                                                                             <button
@@ -740,7 +724,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                                             >
                                                                                 <ShieldCheckIcon
                                                                                     className="w-3.5 h-3.5"/>
-                                                                                ارتقا به ادمین
+                                                                                {t("channel.promote")}
                                                                             </button>
                                                                         )}
                                                                         <button
@@ -748,7 +732,7 @@ function ChannelChatContainer({channel, onBack}) {
                                                                             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 text-right border-t border-slate-700/50"
                                                                         >
                                                                             <Trash2 className="w-3.5 h-3.5"/>
-                                                                            حذف از چنل
+                                                                            {t("channel.removeFromChannel")}
                                                                         </button>
                                                                     </div>
                                                                 </>
@@ -762,7 +746,7 @@ function ChannelChatContainer({channel, onBack}) {
                                 </>
                             ) : (
                                 <p className="text-center text-slate-500 text-xs py-4">
-                                    لیست اعضا فقط برای ادمین‌های این چنل قابل مشاهده‌ست
+                                    {t("channel.membersAdminOnly")}
                                 </p>
                             )}
                         </div>
@@ -770,7 +754,7 @@ function ChannelChatContainer({channel, onBack}) {
                 </div>
             )}
 
-            {/* ✅ NEW: مودال فوروارد — برای فرستادن لینک دعوت به مخاطب/گروه */}
+            {/* مودال فوروارد — برای فرستادن لینک دعوت به مخاطب/گروه */}
             <ForwardMessageModal
                 isOpen={!!shareAsMessage}
                 onClose={() => setShareAsMessage(null)}

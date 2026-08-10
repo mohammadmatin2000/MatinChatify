@@ -4,24 +4,15 @@ import {useChatStore} from "../store/useChatStore";
 import {createPortal} from "react-dom";
 import CameraCaptureModal from "./CameraCaptureModal";
 import toast from "react-hot-toast";
-
-const OPTIONS = [
-    {key: "gallery", label: "عکس و ویدیو", icon: ImageIcon, color: "bg-purple-500"},
-    {key: "camera", label: "دوربین", icon: CameraIcon, color: "bg-pink-500"},
-    {key: "document", label: "داکیومنت", icon: FileTextIcon, color: "bg-indigo-500"},
-    {key: "location", label: "لوکیشن", icon: MapPinIcon, color: "bg-green-500"},
-    {key: "contact", label: "مخاطب", icon: UserIcon, color: "bg-cyan-500"},
-    {key: "poll", label: "نظرسنجی", icon: BarChart3Icon, color: "bg-orange-500"}, // ✅ NEW
-];
+import useTranslation from "../hooks/useTranslation";
 
 function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelectLocation, onSelectContact, onSelectPoll}) {
+    const { t } = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
     const [showContactPicker, setShowContactPicker] = useState(false);
     const [showCamera, setShowCamera] = useState(false);
-    const [showPollModal, setShowPollModal] = useState(false); // ✅ NEW
+    const [showPollModal, setShowPollModal] = useState(false);
     const [menuPos, setMenuPos] = useState({bottom: 0, right: 0});
-    // ✅ FIX: تا لوکیشن در حال گرفتنه، دکمه غیرفعال بشه و کاربر بفهمه
-    // داره یه کاری انجام میشه (قبلاً هیچ فیدبکی نبود، انگار هیچ اتفاقی نمی‌افتاد)
     const [isLocating, setIsLocating] = useState(false);
     const menuRef = useRef(null);
     const buttonRef = useRef(null);
@@ -30,6 +21,15 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
     const documentInputRef = useRef(null);
 
     const {allContacts, getAllContacts} = useChatStore();
+
+    const OPTIONS = [
+        {key: "gallery", label: t("attach.gallery"), icon: ImageIcon, color: "bg-purple-500"},
+        {key: "camera", label: t("attach.camera"), icon: CameraIcon, color: "bg-pink-500"},
+        {key: "document", label: t("attach.document"), icon: FileTextIcon, color: "bg-indigo-500"},
+        {key: "location", label: t("attach.location"), icon: MapPinIcon, color: "bg-green-500"},
+        {key: "contact", label: t("attach.contact"), icon: UserIcon, color: "bg-cyan-500"},
+        {key: "poll", label: t("attach.poll"), icon: BarChart3Icon, color: "bg-orange-500"},
+    ];
 
     useEffect(() => {
         const handleClickOutside = (e) => {
@@ -76,7 +76,7 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 getAllContacts();
                 setShowContactPicker(true);
                 break;
-            case "poll": // ✅ NEW
+            case "poll":
                 setShowPollModal(true);
                 break;
             default:
@@ -84,24 +84,15 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
         }
     };
 
-    // ✅ FIX: بازنویسی کامل گرفتن لوکیشن —
-    // ۱) timeout واقعی گذاشته شده (قبلاً نبود، پس اگه سیستم/مرورگر جواب
-    //    نمی‌داد، درخواست تا ابد معلق می‌موند و هیچ خطایی هم دیده نمی‌شد)
-    // ۲) پیام‌های خطای مشخص برای هر حالت (دسترسی رد شده / پیدا نشد / تایم‌اوت)
-    // ۳) اگه گرفتن دقیق (high accuracy) با تایم‌اوت مواجه شد، یه تلاش دوم با
-    //    enableHighAccuracy:false و maximumAge بالا انجام می‌ده — این حالت
-    //    برای دسکتاپ‌های بدون GPS واقعی (که موقعیت رو از Wi-Fi/IP حدس
-    //    می‌زنن) شانس موفقیت رو خیلی بالا می‌بره
-    // ۴) لودینگ روی دکمه نشون داده می‌شه تا کاربر بفهمه چیزی در حال انجامه
     const handleShareLocation = () => {
         if (!navigator.geolocation) {
-            toast.error("مرورگرت از لوکیشن پشتیبانی نمی‌کنه");
+            toast.error(t("attach.noGeoSupport"));
             return;
         }
         if (isLocating) return;
 
         setIsLocating(true);
-        const loadingToast = toast.loading("در حال گرفتن موقعیت مکانی...");
+        const loadingToast = toast.loading(t("attach.gettingLocation"));
 
         const cleanup = () => {
             setIsLocating(false);
@@ -121,7 +112,7 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                 onSuccess,
                 (err) => {
                     cleanup();
-                    toast.error(describeLocationError(err));
+                    toast.error(describeLocationError(err, t));
                 },
                 {enableHighAccuracy: false, timeout: 10000, maximumAge: 300000}
             );
@@ -130,13 +121,11 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
         navigator.geolocation.getCurrentPosition(
             onSuccess,
             (err) => {
-                // ✅ اگه تلاش دقیق تایم‌اوت داد، یه بار دیگه با تنظیمات
-                // سازگارتر (بدون GPS دقیق، اجازه‌ی موقعیت کش‌شده) امتحان کن
                 if (err.code === err.TIMEOUT) {
                     attemptLowAccuracy();
                 } else {
                     cleanup();
-                    toast.error(describeLocationError(err));
+                    toast.error(describeLocationError(err, t));
                 }
             },
             {enableHighAccuracy: true, timeout: 6000, maximumAge: 0}
@@ -182,7 +171,7 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                                             <Icon className="w-4.5 h-4.5 text-white"/>
                                         </div>
                                         <span className="text-slate-200 text-sm">
-                                            {isLocationBusy ? "در حال گرفتن موقعیت..." : opt.label}
+                                            {isLocationBusy ? t("attach.gettingLocation") : opt.label}
                                         </span>
                                     </button>
                                 );
@@ -233,11 +222,11 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-5 py-4 border-b border-slate-700/50">
-                            <h3 className="text-slate-100 font-semibold text-base">ارسال مخاطب</h3>
+                            <h3 className="text-slate-100 font-semibold text-base">{t("attach.sendContact")}</h3>
                         </div>
                         <div className="overflow-y-auto flex-1">
                             {allContacts.length === 0 ? (
-                                <p className="text-center text-slate-500 text-sm py-8">مخاطبی نداری</p>
+                                <p className="text-center text-slate-500 text-sm py-8">{t("forward.noContacts")}</p>
                             ) : (
                                 allContacts.map((c) => {
                                     const profilePic = c.profile?.startsWith("http")
@@ -288,21 +277,21 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
     );
 }
 
-// ✅ FIX: پیام خطای مشخص برای هر کد خطای geolocation
-function describeLocationError(err) {
+function describeLocationError(err, t) {
     switch (err?.code) {
         case err?.PERMISSION_DENIED:
-            return "دسترسی به لوکیشن رد شده. از تنظیمات مرورگر (کنار آدرس سایت) اجازه بده.";
+            return t("attach.locationDenied");
         case err?.POSITION_UNAVAILABLE:
-            return "موقعیت مکانی در دسترس نیست. مطمئن شو Location Services سیستم روشنه.";
+            return t("attach.locationUnavailable");
         case err?.TIMEOUT:
-            return "زمان گرفتن موقعیت تموم شد. دوباره امتحان کن یا Location Services سیستم رو چک کن.";
+            return t("attach.locationTimeout");
         default:
-            return "دسترسی به لوکیشن ممکن نشد.";
+            return t("attach.locationFailed");
     }
 }
 
 function PollCreateModal({onClose, onCreate}) {
+    const { t } = useTranslation();
     const [question, setQuestion] = useState("");
     const [options, setOptions] = useState(["", ""]);
     const [multiple, setMultiple] = useState(false);
@@ -342,7 +331,7 @@ function PollCreateModal({onClose, onCreate}) {
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
-                    <h3 className="text-slate-100 font-semibold text-base">ساخت نظرسنجی</h3>
+                    <h3 className="text-slate-100 font-semibold text-base">{t("poll.createTitle")}</h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
                         <XIcon className="w-5 h-5"/>
                     </button>
@@ -350,18 +339,18 @@ function PollCreateModal({onClose, onCreate}) {
 
                 <div className="overflow-y-auto flex-1 p-4 space-y-4">
                     <div>
-                        <label className="text-slate-400 text-xs mb-1 block">سؤال</label>
+                        <label className="text-slate-400 text-xs mb-1 block">{t("poll.question")}</label>
                         <input
                             type="text"
                             value={question}
                             onChange={(e) => setQuestion(e.target.value)}
-                            placeholder="مثلاً: کدوم روز جمع بشیم؟"
+                            placeholder={t("poll.questionPlaceholder")}
                             className="w-full bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:ring-1 focus:ring-cyan-500"
                         />
                     </div>
 
                     <div>
-                        <label className="text-slate-400 text-xs mb-2 block">گزینه‌ها</label>
+                        <label className="text-slate-400 text-xs mb-2 block">{t("poll.optionsLabel")}</label>
                         <div className="space-y-2">
                             {options.map((opt, idx) => (
                                 <div key={idx} className="flex items-center gap-2">
@@ -369,7 +358,7 @@ function PollCreateModal({onClose, onCreate}) {
                                         type="text"
                                         value={opt}
                                         onChange={(e) => updateOption(idx, e.target.value)}
-                                        placeholder={`گزینه ${idx + 1}`}
+                                        placeholder={t("poll.optionPlaceholder", { n: idx + 1 })}
                                         className="flex-1 bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:ring-1 focus:ring-cyan-500"
                                     />
                                     {options.length > 2 && (
@@ -389,7 +378,7 @@ function PollCreateModal({onClose, onCreate}) {
                                 onClick={addOption}
                                 className="mt-2 text-cyan-400 hover:text-cyan-300 text-xs font-medium transition-colors"
                             >
-                                + افزودن گزینه
+                                {t("poll.addOption")}
                             </button>
                         )}
                     </div>
@@ -401,7 +390,7 @@ function PollCreateModal({onClose, onCreate}) {
                             onChange={(e) => setMultiple(e.target.checked)}
                             className="w-4 h-4 accent-cyan-500"
                         />
-                        <span className="text-slate-300 text-sm">اجازه‌ی انتخاب چند گزینه</span>
+                        <span className="text-slate-300 text-sm">{t("poll.allowMultiple")}</span>
                     </label>
                 </div>
 
@@ -411,7 +400,7 @@ function PollCreateModal({onClose, onCreate}) {
                         disabled={!canSubmit}
                         className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
                     >
-                        ایجاد نظرسنجی
+                        {t("poll.submit")}
                     </button>
                 </div>
             </div>
