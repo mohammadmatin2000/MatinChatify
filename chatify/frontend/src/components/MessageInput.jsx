@@ -3,6 +3,7 @@ import { useChatStore } from "../store/useChatStore";
 import { useSettingsStore } from "../store/useSettingsStore"; // ✅ NEW
 import { SendIcon, XIcon, FileTextIcon } from "lucide-react";
 import useKeyboardSound from "../hooks/useKeyboardSound";
+import useTranslation from "../hooks/useTranslation";
 import AttachMenu from "./AttachMenu";
 import VoiceRecorder from "./VoiceRecorder";
 
@@ -22,6 +23,7 @@ export default function MessageInput({
   onCancelReply = () => {},
 }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
+  const { t } = useTranslation();
   const [imageFile, setImageFile] = useState(null);
   const [documentFile, setDocumentFile] = useState(null);
   const fileInputRef = useRef(null);
@@ -189,7 +191,7 @@ export default function MessageInput({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleInputKeyDown}
-          placeholder="پیام خود را بنویسید"
+          placeholder={t("messageInput.placeholder")}
           className="flex-1 bg-slate-800/50 border border-slate-700/50 rounded-lg py-2 px-4"
         />
 

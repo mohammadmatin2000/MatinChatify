@@ -1,19 +1,23 @@
 import { useState } from "react";
 import { MoreVertical, Ban, Flag, ShieldCheck, X } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
+import useTranslation from "../hooks/useTranslation";
 
-// ✅ NEW: منوی مسدودسازی/گزارش کاربر — دقیقاً کنار دکمه‌ی بستن توی ChatHeader قرار می‌گیره
-const REPORT_REASONS = [
-  { value: "spam", label: "اسپم" },
-  { value: "harassment", label: "مزاحمت" },
-  { value: "fake_account", label: "اکانت جعلی" },
-  { value: "inappropriate", label: "محتوای نامناسب" },
-  { value: "other", label: "غیره" },
-];
+// ✅ منوی مسدودسازی/گزارش کاربر — دقیقاً کنار دکمه‌ی بستن توی ChatHeader قرار می‌گیره
 
 function ChatHeaderMenu({ userId, userName }) {
   const { blockStatus, blockUser, unblockUser, reportUser } = useChatStore();
+  const { t } = useTranslation();
   const isBlocked = blockStatus.iBlockedThem;
+
+  // ✅ کلید‌های ترجمه برای دلایل گزارش — به‌جای متن ثابت فارسی
+  const REPORT_REASONS = [
+    { value: "spam", label: t("block.reasonSpam") },
+    { value: "harassment", label: t("block.reasonHarassment") },
+    { value: "fake_account", label: t("block.reasonFake") },
+    { value: "inappropriate", label: t("block.reasonInappropriate") },
+    { value: "other", label: t("block.reasonOther") },
+  ];
 
   const [showMenu, setShowMenu] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
@@ -55,7 +59,7 @@ function ChatHeaderMenu({ userId, userName }) {
         className="group w-10 h-10 rounded-full flex items-center justify-center
                    text-slate-400 hover:text-slate-100 hover:bg-slate-700/50
                    active:scale-90 transition-all duration-200"
-        title="گزینه‌های بیشتر"
+        title={t("chatHeader.moreOptions")}
       >
         <MoreVertical className="w-[18px] h-[18px]" />
       </button>
@@ -74,7 +78,7 @@ function ChatHeaderMenu({ userId, userName }) {
                 <Ban className="w-4 h-4 text-red-400 flex-shrink-0" />
               )}
               <span className={isBlocked ? "text-green-400" : "text-red-400"}>
-                {isBlocked ? "رفع مسدودیت" : "مسدود کردن"}
+                {isBlocked ? t("block.unblock") : t("block.block")}
               </span>
             </button>
             <button
@@ -82,7 +86,7 @@ function ChatHeaderMenu({ userId, userName }) {
               className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-right hover:bg-slate-700/50 transition-colors border-t border-slate-700/40"
             >
               <Flag className="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <span className="text-amber-400">گزارش کاربر</span>
+              <span className="text-amber-400">{t("block.report")}</span>
             </button>
           </div>
         </>
@@ -98,26 +102,26 @@ function ChatHeaderMenu({ userId, userName }) {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-slate-100 font-semibold text-base mb-2">
-              {isBlocked ? "رفع مسدودیت" : "مسدود کردن"} {userName}؟
+              {isBlocked
+                ? t("block.unblockConfirmTitle", { name: userName })
+                : t("block.confirmTitle", { name: userName })}
             </h3>
             <p className="text-slate-400 text-sm mb-4">
-              {isBlocked
-                ? "بعد از رفع مسدودیت، این کاربر می‌تونه دوباره برات پیام بفرسته و تماس بگیره."
-                : "دیگه پیام یا تماسی از این کاربر دریافت نمی‌کنی و اونم پیامای تو رو نمی‌بینه."}
+              {isBlocked ? t("block.unblockDesc") : t("block.blockDesc")}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowBlockConfirm(false)}
                 className="flex-1 py-2 rounded-lg bg-slate-700 text-slate-300 text-sm"
               >
-                انصراف
+                {t("common.cancel")}
               </button>
               <button
                 onClick={handleToggleBlock}
                 disabled={loading}
                 className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm"
               >
-                {loading ? "..." : isBlocked ? "رفع مسدودیت" : "مسدود کن"}
+                {loading ? "..." : isBlocked ? t("block.unblock") : t("block.block")}
               </button>
             </div>
           </div>
@@ -134,14 +138,16 @@ function ChatHeaderMenu({ userId, userName }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-slate-100 font-semibold text-base">گزارش {userName}</h3>
+              <h3 className="text-slate-100 font-semibold text-base">
+                {t("block.report")} {userName}
+              </h3>
               <button onClick={() => setShowReport(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {reportSent ? (
-              <p className="text-green-400 text-sm text-center py-4">گزارش ثبت شد ✅</p>
+              <p className="text-green-400 text-sm text-center py-4">{t("block.reportSent")}</p>
             ) : (
               <>
                 <div className="space-y-1.5 mb-3">
@@ -163,7 +169,7 @@ function ChatHeaderMenu({ userId, userName }) {
                 <textarea
                   value={reportDesc}
                   onChange={(e) => setReportDesc(e.target.value)}
-                  placeholder="توضیح بیشتر (اختیاری)"
+                  placeholder={t("block.descPlaceholder")}
                   rows={2}
                   className="w-full bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 resize-none mb-3"
                 />
@@ -172,7 +178,7 @@ function ChatHeaderMenu({ userId, userName }) {
                   disabled={loading}
                   className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium"
                 >
-                  {loading ? "در حال ارسال..." : "ارسال گزارش"}
+                  {loading ? t("block.sendingReport") : t("block.sendReport")}
                 </button>
               </>
             )}

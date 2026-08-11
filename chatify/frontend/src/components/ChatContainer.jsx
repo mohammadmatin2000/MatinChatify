@@ -20,12 +20,63 @@ const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_BASE_URL}${u
 // ✅ NEW: نگاشت گزینه‌ی پس‌زمینه‌ی انتخاب‌شده در تنظیمات به کلاس واقعی Tailwind
 const WALLPAPER_CLASSES = {
   default: "",
-  slate: "bg-slate-800/40",
-  cyan_gradient: "bg-gradient-to-br from-cyan-950/70 via-slate-900 to-slate-900",
-  violet_gradient: "bg-gradient-to-br from-violet-950/70 via-slate-900 to-slate-900",
-  emerald_gradient: "bg-gradient-to-br from-emerald-950/70 via-slate-900 to-slate-900",
-  dots: "bg-slate-900 bg-[radial-gradient(circle,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:16px_16px]",
+  midnight: "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950",
+  aurora:
+    "bg-slate-950 bg-[radial-gradient(circle_at_15%_15%,rgba(34,211,238,0.16),transparent_45%),radial-gradient(circle_at_85%_5%,rgba(168,85,247,0.14),transparent_45%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.12),transparent_50%)]",
+  sunset: "bg-gradient-to-br from-orange-950/50 via-slate-900 to-rose-950/40",
+  ocean: "bg-gradient-to-br from-cyan-950/60 via-slate-900 to-blue-950/40",
+  forest: "bg-gradient-to-br from-emerald-950/60 via-slate-900 to-teal-950/30",
+  grid: "bg-slate-950 bg-[linear-gradient(rgba(148,163,184,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.07)_1px,transparent_1px)] bg-[length:24px_24px]",
+  dots: "bg-slate-950 bg-[radial-gradient(circle,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[length:18px_18px]",
+  // -------- گزینه‌های جدید --------
+  candy: "bg-gradient-to-br from-fuchsia-950/50 via-slate-900 to-indigo-950/50",
+  amber: "bg-gradient-to-br from-amber-950/50 via-slate-900 to-slate-950",
+  starry:
+    "bg-slate-950 bg-[radial-gradient(1.5px_1.5px_at_20px_30px,rgba(255,255,255,0.5),transparent),radial-gradient(1.5px_1.5px_at_90px_60px,rgba(255,255,255,0.4),transparent),radial-gradient(1px_1px_at_150px_20px,rgba(255,255,255,0.35),transparent),radial-gradient(1.5px_1.5px_at_50px_100px,rgba(255,255,255,0.3),transparent)] bg-[length:180px_180px]",
+  diagonal:
+    "bg-slate-950 bg-[repeating-linear-gradient(135deg,rgba(148,163,184,0.06)_0px,rgba(148,163,184,0.06)_1px,transparent_1px,transparent_14px)]",
+  monochrome: "bg-slate-900",
 };
+
+// توی ProfileHeader.jsx جای WALLPAPER_OPTIONS فعلی بذار:
+const WALLPAPER_OPTIONS = [
+  { id: "default", label: "پیش‌فرض", preview: "bg-slate-900" },
+  { id: "midnight", label: "نیمه‌شب", preview: "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950" },
+  {
+    id: "aurora",
+    label: "شفق قطبی",
+    preview:
+      "bg-slate-950 bg-[radial-gradient(circle_at_15%_15%,rgba(34,211,238,0.35),transparent_45%),radial-gradient(circle_at_85%_5%,rgba(168,85,247,0.35),transparent_45%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.3),transparent_50%)]",
+  },
+  { id: "sunset", label: "غروب", preview: "bg-gradient-to-br from-orange-600 via-rose-800 to-slate-950" },
+  { id: "ocean", label: "اقیانوس", preview: "bg-gradient-to-br from-cyan-500 via-blue-800 to-slate-950" },
+  { id: "forest", label: "جنگل", preview: "bg-gradient-to-br from-emerald-500 via-teal-800 to-slate-950" },
+  {
+    id: "grid",
+    label: "شبکه‌ای",
+    preview:
+      "bg-slate-800 bg-[linear-gradient(rgba(255,255,255,0.15)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.15)_1px,transparent_1px)] bg-[length:10px_10px]",
+  },
+  {
+    id: "dots",
+    label: "نقطه‌چین",
+    preview: "bg-slate-800 bg-[radial-gradient(circle,rgba(255,255,255,0.2)_1px,transparent_1px)] bg-[length:10px_10px]",
+  },
+  { id: "candy", label: "بنفش‌آبی", preview: "bg-gradient-to-br from-fuchsia-500 via-purple-700 to-indigo-950" },
+  { id: "amber", label: "کهربایی", preview: "bg-gradient-to-br from-amber-500 via-orange-700 to-slate-950" },
+  {
+    id: "starry",
+    label: "پرستاره",
+    preview:
+      "bg-slate-900 bg-[radial-gradient(1.5px_1.5px_at_20px_30px,rgba(255,255,255,0.9),transparent),radial-gradient(1.5px_1.5px_at_60px_10px,rgba(255,255,255,0.8),transparent),radial-gradient(1px_1px_at_90px_50px,rgba(255,255,255,0.7),transparent),radial-gradient(1.5px_1.5px_at_30px_70px,rgba(255,255,255,0.6),transparent)] bg-[length:100px_100px]",
+  },
+  {
+    id: "diagonal",
+    label: "خط‌های مورب",
+    preview: "bg-slate-800 bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.15)_0px,rgba(255,255,255,0.15)_1px,transparent_1px,transparent_8px)]",
+  },
+  { id: "monochrome", label: "سرمه‌ای تک‌رنگ", preview: "bg-slate-900" },
+];
 
 // ✅ NEW: نگاشت اندازه‌ی فونت انتخاب‌شده به کلاس متن
 const FONT_SIZE_CLASSES = {
@@ -412,7 +463,9 @@ function ChatContainer() {
               return (
                 <div key={msg._id} className={`chat ${isOwner ? "chat-end" : "chat-start"}`}>
                   <div
-
+                    className={`chat-bubble relative select-none ${
+                      isOwner ? "bg-cyan-600 text-white" : "bg-gray-800 text-white"
+                    }`}
                     style={{ touchAction: "manipulation" }}
                     onClick={(e) => {
                       if (msg.messageType === "poll") return;

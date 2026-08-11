@@ -165,7 +165,7 @@ function ProfileHeader({onNewGroup}) {
     const [isEditingBio, setIsEditingBio] = useState(false);
     const bioInputRef = useRef(null);
 
-    const { t } = useTranslation();
+    const {t, language} = useTranslation();
 
     const {disconnectCallSocket} = useCallStore();
 
@@ -225,7 +225,7 @@ function ProfileHeader({onNewGroup}) {
     const [autoDownloadWifi, setAutoDownloadWifi] = useState(true);
     const [autoDownloadMobile, setAutoDownloadMobile] = useState(false);
 
-    const [language, setLanguage] = useState("fa");
+    const [language2, setLanguageValue] = useState("fa");
     const [aboutText, setAboutText] = useState("");
 
     // ---- تغییر رمز عبور ----
@@ -271,6 +271,9 @@ function ProfileHeader({onNewGroup}) {
     const setAppLanguage = useLanguageStore((state) => state.setLanguage);
 
     const setLocalSetting = useSettingsStore((state) => state.setSetting);
+
+    // ✅ لوکیل تاریخ بر اساس زبون فعلی (برای فرمت تاریخ بکاپ)
+    const dateLocaleStr = language === "fa" ? "fa-IR" : language === "de" ? "de-DE" : "en-US";
 
     useEffect(() => {
         if (isEditingBio && bioInputRef.current) bioInputRef.current.focus();
@@ -337,7 +340,7 @@ function ProfileHeader({onNewGroup}) {
                 setLocalSetting("enterToSend", !!d.enter_to_send);
                 setAutoDownloadWifi(!!d.auto_download_wifi);
                 setAutoDownloadMobile(!!d.auto_download_mobile);
-                setLanguage(d.language ?? "fa");
+                setLanguageValue(d.language ?? "fa");
                 setChatWallpaper(d.chat_wallpaper ?? "default");
                 setLastBackupAt(d.last_backup_at ?? null);
                 setNotifMessages(!!d.notif_messages);
@@ -358,7 +361,7 @@ function ProfileHeader({onNewGroup}) {
                 settingsLoadedRef.current = true;
             } catch (err) {
                 console.error("خطا در دریافت تنظیمات:", err.response?.data || err);
-                setSettingsError("دریافت تنظیمات با خطا مواجه شد.");
+                setSettingsError(t("settings.fetchFailed"));
             } finally {
                 setSettingsLoading(false);
             }
@@ -376,16 +379,16 @@ function ProfileHeader({onNewGroup}) {
             await axios.patch(`${API_BASE_URL}/settings/`, {[field]: value}, {headers: authHeaders});
         } catch (err) {
             console.error("خطا در ذخیره تنظیمات:", err.response?.data || err);
-            setSettingsError("ذخیره نشد. دوباره امتحان کن.");
+            setSettingsError(t("settings.saveFailed"));
         } finally {
             setSettingsSaving(false);
         }
     };
 
     const bindToggle = (setter, field, storeKey) => (value) => {
-    setter(value);
-    patchSetting(field, value);
-    if (storeKey) setLocalSetting(storeKey, value);
+        setter(value);
+        patchSetting(field, value);
+        if (storeKey) setLocalSetting(storeKey, value);
     };
 
     const cycleVisibility = (current, setter, field) => {
@@ -402,7 +405,7 @@ function ProfileHeader({onNewGroup}) {
     };
 
     const handleLanguageChange = (value) => {
-        setLanguage(value);
+        setLanguageValue(value);
         setAppLanguage(value); // ✅ کل اپ همین لحظه عوض می‌شه (جهت صفحه + متن‌ها)
         patchSetting("language", value);
     };
@@ -444,7 +447,7 @@ function ProfileHeader({onNewGroup}) {
     // ========================== دعوت از دوستان ==========================
     const handleInviteFriends = async () => {
         const inviteUrl = `${window.location.origin}/signup`;
-        const shareText = "بیا با من توی چتیفای چت کن 🚀";
+        const shareText = t("invite.shareText");
 
         // ✅ اگه گوشی/مرورگر از Share API پشتیبانی کنه (بیشتر موبایل‌ها)
         if (navigator.share) {
@@ -454,7 +457,7 @@ function ProfileHeader({onNewGroup}) {
                 // اگه خودِ کاربر منوی اشتراک‌گذاری رو کنسل کرده، این خطا طبیعیه
                 if (err?.name !== "AbortError") {
                     console.error("خطا در اشتراک‌گذاری:", err);
-                    toast.error("اشتراک‌گذاری ممکن نشد");
+                    toast.error(t("invite.shareFailed"));
                 }
             }
             return;
@@ -463,10 +466,10 @@ function ProfileHeader({onNewGroup}) {
         // ✅ فال‌بک برای دسکتاپ: کپی توی کلیپ‌بورد + فیدبک واقعی
         try {
             await navigator.clipboard.writeText(inviteUrl);
-            toast.success("لینک دعوت کپی شد ✅");
+            toast.success(t("invite.copied"));
         } catch (err) {
             console.error("خطا در کپی لینک:", err);
-            toast.error("کپی لینک ممکن نشد");
+            toast.error(t("invite.copyFailed"));
         }
     };
 
@@ -518,11 +521,11 @@ function ProfileHeader({onNewGroup}) {
 
     // ---- پشتیبان‌گیری از چت‌ها ----
     const formatBackupDate = (iso) => {
-        if (!iso) return "هنوز پشتیبان‌گیری نشده";
+        if (!iso) return t("backup.never");
         try {
-            return `آخرین بار: ${new Date(iso).toLocaleDateString("fa-IR")}`;
+            return t("backup.lastTime", {date: new Date(iso).toLocaleDateString(dateLocaleStr)});
         } catch {
-            return "هنوز پشتیبان‌گیری نشده";
+            return t("backup.never");
         }
     };
 
@@ -543,10 +546,10 @@ function ProfileHeader({onNewGroup}) {
             link.remove();
             window.URL.revokeObjectURL(url);
             setLastBackupAt(new Date().toISOString());
-            toast.success("پشتیبان‌گیری با موفقیت دانلود شد ✅");
+            toast.success(t("backup.downloaded"));
         } catch (err) {
             console.error("خطا در پشتیبان‌گیری:", err.response?.data || err);
-            toast.error("پشتیبان‌گیری ناموفق بود");
+            toast.error(t("backup.failed"));
         } finally {
             setBackupInProgress(false);
         }
@@ -581,11 +584,11 @@ function ProfileHeader({onNewGroup}) {
         setAddContactSuccess(false);
 
         if (!/^09\d{9}$/.test(contactPhone)) {
-            setAddContactError("شماره موبایل معتبر نیست.");
+            setAddContactError(t("addContact.invalidPhone"));
             return;
         }
         if (!contactDisplayName.trim()) {
-            setAddContactError("یه اسم برای این مخاطب وارد کن.");
+            setAddContactError(t("addContact.nameRequired"));
             return;
         }
 
@@ -598,7 +601,7 @@ function ProfileHeader({onNewGroup}) {
             setContactPhone("");
             setContactDisplayName("");
         } else {
-            setAddContactError("این شماره توی چتیفای ثبت‌نام نکرده.");
+            setAddContactError(t("addContact.notRegistered"));
         }
     };
 
@@ -828,11 +831,11 @@ function ProfileHeader({onNewGroup}) {
         setChangePasswordSuccess(false);
 
         if (!oldPassword || !newPassword) {
-            setChangePasswordError("هر دو فیلد رو پر کن.");
+            setChangePasswordError(t("account.fillBothFields"));
             return;
         }
         if (newPassword.length < 8) {
-            setChangePasswordError("رمز جدید باید حداقل ۸ کاراکتر باشه.");
+            setChangePasswordError(t("account.passwordTooShort"));
             return;
         }
 
@@ -849,7 +852,7 @@ function ProfileHeader({onNewGroup}) {
         } catch (err) {
             const data = err.response?.data;
             const msg =
-                data?.old_password?.[0] || data?.new_password?.[0] || data?.detail || "تغییر رمز با خطا مواجه شد.";
+                data?.old_password?.[0] || data?.new_password?.[0] || data?.detail || t("account.changePasswordFailed");
             setChangePasswordError(msg);
         } finally {
             setIsChangingPassword(false);
@@ -860,7 +863,7 @@ function ProfileHeader({onNewGroup}) {
     const handleDeleteAccount = async () => {
         setDeleteAccountError("");
         if (!deletePassword) {
-            setDeleteAccountError("برای تایید، رمز عبورت رو وارد کن.");
+            setDeleteAccountError(t("account.deletePasswordRequired"));
             return;
         }
 
@@ -878,59 +881,97 @@ function ProfileHeader({onNewGroup}) {
             window.location.replace("/login");
         } catch (err) {
             const data = err.response?.data;
-            setDeleteAccountError(data?.password?.[0] || data?.detail || "حذف حساب با خطا مواجه شد.");
+            setDeleteAccountError(data?.password?.[0] || data?.detail || t("account.deleteFailed"));
         } finally {
             setIsDeletingAccount(false);
         }
     };
 
     const visibilityLabel = (v) =>
-        v === "everyone" ? "همه" : v === "contacts" ? "مخاطبین من" : "هیچ‌کس";
+        v === "everyone" ? t("privacy.everyone") : v === "contacts" ? t("privacy.contacts") : t("privacy.nobody");
 
-    const fontSizeLabel = (v) => (v === "small" ? "کوچک" : v === "large" ? "بزرگ" : "متوسط");
+    const fontSizeLabel = (v) => (v === "small" ? t("chats.fontSmall") : v === "large" ? t("chats.fontLarge") : t("chats.fontMedium"));
 
     const formatBytes = (bytes) => {
-        if (!bytes) return "۰ مگابایت";
+        if (!bytes) return t("storage.unitZero");
         const mb = bytes / (1024 * 1024);
-        if (mb < 1) return `${Math.round(bytes / 1024)} کیلوبایت`;
-        if (mb < 1024) return `${mb.toFixed(1)} مگابایت`;
-        return `${(mb / 1024).toFixed(2)} گیگابایت`;
+        if (mb < 1) return `${Math.round(bytes / 1024)} ${t("storage.unitKB")}`;
+        if (mb < 1024) return `${mb.toFixed(1)} ${t("storage.unitMB")}`;
+        return `${(mb / 1024).toFixed(2)} ${t("storage.unitGB")}`;
     };
+    // ============================== نسخه‌ی کامل و متنوع پس‌زمینه‌ها (v3) ==============================
+
+// توی ChatContainer.jsx جای WALLPAPER_CLASSES فعلی بذار:
+    const WALLPAPER_CLASSES = {
+        default: "",
+        midnight: "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950",
+        aurora:
+            "bg-slate-950 bg-[radial-gradient(circle_at_15%_15%,rgba(34,211,238,0.16),transparent_45%),radial-gradient(circle_at_85%_5%,rgba(168,85,247,0.14),transparent_45%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.12),transparent_50%)]",
+        sunset: "bg-gradient-to-br from-orange-950/50 via-slate-900 to-rose-950/40",
+        ocean: "bg-gradient-to-br from-cyan-950/60 via-slate-900 to-blue-950/40",
+        forest: "bg-gradient-to-br from-emerald-950/60 via-slate-900 to-teal-950/30",
+        grid: "bg-slate-950 bg-[linear-gradient(rgba(148,163,184,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.07)_1px,transparent_1px)] bg-[length:24px_24px]",
+        dots: "bg-slate-950 bg-[radial-gradient(circle,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[length:18px_18px]",
+        // -------- گزینه‌های جدید --------
+        candy: "bg-gradient-to-br from-fuchsia-950/50 via-slate-900 to-indigo-950/50",
+        amber: "bg-gradient-to-br from-amber-950/50 via-slate-900 to-slate-950",
+        starry:
+            "bg-slate-950 bg-[radial-gradient(1.5px_1.5px_at_20px_30px,rgba(255,255,255,0.5),transparent),radial-gradient(1.5px_1.5px_at_90px_60px,rgba(255,255,255,0.4),transparent),radial-gradient(1px_1px_at_150px_20px,rgba(255,255,255,0.35),transparent),radial-gradient(1.5px_1.5px_at_50px_100px,rgba(255,255,255,0.3),transparent)] bg-[length:180px_180px]",
+        diagonal:
+            "bg-slate-950 bg-[repeating-linear-gradient(135deg,rgba(148,163,184,0.06)_0px,rgba(148,163,184,0.06)_1px,transparent_1px,transparent_14px)]",
+        monochrome: "bg-slate-900",
+    };
+
+// توی ProfileHeader.jsx جای WALLPAPER_OPTIONS فعلی بذار:
     const WALLPAPER_OPTIONS = [
         {id: "default", label: "پیش‌فرض", preview: "bg-slate-900"},
-        {id: "slate", label: "سرمه‌ای ساده", preview: "bg-slate-800"},
-        {id: "cyan_gradient", label: "فیروزه‌ای", preview: "bg-gradient-to-br from-cyan-600 to-slate-900"},
-        {id: "violet_gradient", label: "بنفش", preview: "bg-gradient-to-br from-violet-600 to-slate-900"},
-        {id: "emerald_gradient", label: "سبز", preview: "bg-gradient-to-br from-emerald-600 to-slate-900"},
+        {id: "midnight", label: "نیمه‌شب", preview: "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"},
+        {
+            id: "aurora",
+            label: "شفق قطبی",
+            preview:
+                "bg-slate-950 bg-[radial-gradient(circle_at_15%_15%,rgba(34,211,238,0.35),transparent_45%),radial-gradient(circle_at_85%_5%,rgba(168,85,247,0.35),transparent_45%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.3),transparent_50%)]",
+        },
+        {id: "sunset", label: "غروب", preview: "bg-gradient-to-br from-orange-600 via-rose-800 to-slate-950"},
+        {id: "ocean", label: "اقیانوس", preview: "bg-gradient-to-br from-cyan-500 via-blue-800 to-slate-950"},
+        {id: "forest", label: "جنگل", preview: "bg-gradient-to-br from-emerald-500 via-teal-800 to-slate-950"},
+        {
+            id: "grid",
+            label: "شبکه‌ای",
+            preview:
+                "bg-slate-800 bg-[linear-gradient(rgba(255,255,255,0.15)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.15)_1px,transparent_1px)] bg-[length:10px_10px]",
+        },
         {
             id: "dots",
             label: "نقطه‌چین",
-            preview: "bg-slate-800 bg-[radial-gradient(circle,rgba(255,255,255,0.12)_1px,transparent_1px)] bg-[length:14px_14px]",
+            preview: "bg-slate-800 bg-[radial-gradient(circle,rgba(255,255,255,0.2)_1px,transparent_1px)] bg-[length:10px_10px]",
         },
+        {id: "candy", label: "بنفش‌آبی", preview: "bg-gradient-to-br from-fuchsia-500 via-purple-700 to-indigo-950"},
+        {id: "amber", label: "کهربایی", preview: "bg-gradient-to-br from-amber-500 via-orange-700 to-slate-950"},
+        {
+            id: "starry",
+            label: "پرستاره",
+            preview:
+                "bg-slate-900 bg-[radial-gradient(1.5px_1.5px_at_20px_30px,rgba(255,255,255,0.9),transparent),radial-gradient(1.5px_1.5px_at_60px_10px,rgba(255,255,255,0.8),transparent),radial-gradient(1px_1px_at_90px_50px,rgba(255,255,255,0.7),transparent),radial-gradient(1.5px_1.5px_at_30px_70px,rgba(255,255,255,0.6),transparent)] bg-[length:100px_100px]",
+        },
+        {
+            id: "diagonal",
+            label: "خط‌های مورب",
+            preview: "bg-slate-800 bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.15)_0px,rgba(255,255,255,0.15)_1px,transparent_1px,transparent_8px)]",
+        },
+        {id: "monochrome", label: "سرمه‌ای تک‌رنگ", preview: "bg-slate-900"},
     ];
+
+// نکته: id ها توی هر دو فایل باید عیناً یکی باشن.
+// نکته: id ها توی هر دو فایل باید عیناً یکی باشن.
 
     // ============================== دیتای ثابت بخش کمک ==============================
     const FAQ_ITEMS = [
-        {
-            q: "چطور مخاطب جدید اضافه کنم؟",
-            a: "از دکمه‌ی + بالای صفحه، گزینه‌ی «ساخت مخاطب» رو بزن. می‌تونی با شماره موبایل یا ایمیل مخاطب رو پیدا کنی.",
-        },
-        {
-            q: "چطور یه نفر رو مسدود کنم؟",
-            a: "وارد چت اون فرد بشو، از سه‌نقطه‌ی بالای صفحه گزینه‌ی «مسدود کردن» رو بزن. بعدش نه پیامی ازش می‌بینی نه اون از تو.",
-        },
-        {
-            q: "پیام‌هام رمزنگاری شده‌ست؟",
-            a: "پیام‌ها بین دستگاه تو و سرورهای چتیفای با HTTPS منتقل می‌شن. رمزنگاری سرتاسری (End-to-End) در حال توسعه‌ست.",
-        },
-        {
-            q: "چطور اکانتمو حذف کنم؟",
-            a: "تنظیمات ← اطلاعات حساب ← پایین صفحه «حذف حساب کاربری». توجه کن این کار برگشت‌ناپذیره و همه‌ی چت‌هات پاک می‌شه.",
-        },
-        {
-            q: "چرا اعلان پیام نمی‌گیرم؟",
-            a: "از تنظیمات ← اعلان‌ها مطمئن شو «اعلان پیام‌های جدید» روشنه. همچنین مرورگرت باید اجازه‌ی نوتیفیکیشن به سایت رو داده باشه.",
-        },
+        {q: t("faq.q1"), a: t("faq.a1")},
+        {q: t("faq.q2"), a: t("faq.a2")},
+        {q: t("faq.q3"), a: t("faq.a3")},
+        {q: t("faq.q4"), a: t("faq.a4")},
+        {q: t("faq.q5"), a: t("faq.a5")},
     ];
 
     const SUPPORT_EMAIL = "matin20001000@gmail.comر"; // ← ایمیلتو اینجا بذار
@@ -956,7 +997,7 @@ function ProfileHeader({onNewGroup}) {
                             />
                             <div
                                 className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                <span className="text-white text-xs">تغییر</span>
+                                <span className="text-white text-xs">{t("profile.changePhoto")}</span>
                             </div>
                         </button>
                         <input
@@ -992,11 +1033,11 @@ function ProfileHeader({onNewGroup}) {
                                 className="text-slate-200 font-medium text-base flex items-center gap-1 cursor-pointer group-hover:text-cyan-300 transition-colors"
                                 onClick={() => setIsEditingName(true)}
                             >
-                                <span>{profile.first_name || "کاربر ناشناس"}</span>
+                                <span>{profile.first_name || t("common.unknownUser")}</span>
                                 <PencilIcon className="size-3 opacity-0 group-hover:opacity-80 transition-opacity"/>
                             </div>
                         )}
-                        <p className="text-slate-400 text-xs mt-1">آنلاین</p>
+                        <p className="text-slate-400 text-xs mt-1">{t("common.online")}</p>
                         {isEditingBio ? (
                             <input
                                 ref={bioInputRef}
@@ -1014,7 +1055,7 @@ function ProfileHeader({onNewGroup}) {
                                         handleBioChange();
                                     }
                                 }}
-                                placeholder="یه چیزی درباره‌ی خودت بنویس..."
+                                placeholder={t("profile.bioPlaceholder")}
                                 className="mt-1.5 bg-slate-900/60 border border-cyan-400/50 outline-none text-slate-200 text-xs px-2.5 py-1 rounded-full w-full max-w-[180px] focus:border-cyan-400 transition-colors"
                             />
                         ) : (
@@ -1029,7 +1070,7 @@ function ProfileHeader({onNewGroup}) {
                                     className="w-2.5 h-2.5 text-cyan-400/70 flex-shrink-0 group-hover/bio:text-cyan-400 transition-colors"/>
                                 <span
                                     className="text-[11px] text-slate-400 group-hover/bio:text-slate-200 truncate transition-colors">
-                                    {profile.bio || "درباره‌ی من..."}
+                                    {profile.bio || t("profile.bioButtonPlaceholder")}
                                 </span>
                                 <PencilIcon
                                     className="w-2.5 h-2.5 text-slate-600 opacity-0 group-hover/bio:opacity-100 group-hover/bio:text-cyan-400 flex-shrink-0 transition-all"/>
@@ -1042,7 +1083,7 @@ function ProfileHeader({onNewGroup}) {
                     <button
                         onClick={openSettings}
                         className="text-slate-400 hover:text-cyan-400 transition-colors flex items-center justify-center"
-                        title="تنظیمات"
+                        title={t("settings.title")}
                     >
                         <SettingsIcon className="size-5"/>
                     </button>
@@ -1052,7 +1093,7 @@ function ProfileHeader({onNewGroup}) {
                         <button
                             onClick={() => setShowNewMenu((prev) => !prev)}
                             className="text-slate-300 hover:text-cyan-400 hover:bg-slate-700/60 transition-colors flex items-center justify-center rounded-full size-8"
-                            title="ساخت جدید"
+                            title={t("menu.createNew")}
                         >
                             <PlusIcon className="size-6"/>
                         </button>
@@ -1067,7 +1108,7 @@ function ProfileHeader({onNewGroup}) {
                                         className="flex items-center gap-2.5 px-3.5 py-3 hover:bg-slate-700/50 cursor-pointer text-slate-200 text-sm text-right transition-colors"
                                     >
                                         <UsersIcon className="w-4 h-4 text-cyan-400 shrink-0"/>
-                                        ساخت گروه
+                                        {t("menu.createGroup")}
                                     </button>
 
                                     <button
@@ -1075,14 +1116,14 @@ function ProfileHeader({onNewGroup}) {
                                         className="flex items-center gap-2.5 px-3.5 py-3 hover:bg-slate-700/50 cursor-pointer text-slate-200 text-sm text-right transition-colors"
                                     >
                                         <UserPlus className="w-4 h-4 text-cyan-400 shrink-0"/>
-                                        ساخت مخاطب
+                                        {t("menu.createContact")}
                                     </button>
                                     <button
                                         onClick={openCreateChannel}
                                         className="flex items-center gap-2.5 px-3.5 py-3 hover:bg-slate-700/50 cursor-pointer text-slate-200 text-sm text-right transition-colors"
                                     >
                                         <Radio className="w-4 h-4 text-violet-400 shrink-0"/>
-                                        ساخت چنل
+                                        {t("menu.createChannel")}
                                     </button>
                                 </div>
                             </>
@@ -1099,7 +1140,7 @@ function ProfileHeader({onNewGroup}) {
                                     className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right whitespace-nowrap"
                                 >
                                     <UsersIcon className="w-4 h-4 text-cyan-400 shrink-0"/>
-                                    ساخت گروه
+                                    {t("menu.createGroup")}
                                 </button>
 
                                 <button
@@ -1107,14 +1148,14 @@ function ProfileHeader({onNewGroup}) {
                                     className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
                                 >
                                     <UserPlus className="w-4 h-4 text-cyan-400 shrink-0"/>
-                                    ساخت مخاطب
+                                    {t("menu.createContact")}
                                 </button>
                                 <button
                                     onClick={openCreateChannel}
                                     className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
                                 >
                                     <Radio className="w-4 h-4 text-violet-400 shrink-0"/>
-                                    ساخت چنل
+                                    {t("menu.createChannel")}
                                 </button>
                             </div>
                         </>
@@ -1134,7 +1175,7 @@ function ProfileHeader({onNewGroup}) {
                     >
                         <div
                             className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
-                            <h3 className="text-slate-100 font-semibold text-base">افزودن مخاطب جدید</h3>
+                            <h3 className="text-slate-100 font-semibold text-base">{t("addContact.title")}</h3>
                             <button onClick={closeAddContact}
                                     className="text-slate-400 hover:text-white transition-colors">
                                 <XIcon className="w-5 h-5"/>
@@ -1150,7 +1191,7 @@ function ProfileHeader({onNewGroup}) {
                                         : "text-slate-400 hover:text-slate-200"
                                 }`}
                             >
-                                با شماره موبایل
+                                {t("addContact.byPhone")}
                             </button>
                             <button
                                 onClick={() => setAddContactTab("email")}
@@ -1160,7 +1201,7 @@ function ProfileHeader({onNewGroup}) {
                                         : "text-slate-400 hover:text-slate-200"
                                 }`}
                             >
-                                با ایمیل
+                                {t("addContact.byEmail")}
                             </button>
                         </div>
 
@@ -1170,11 +1211,12 @@ function ProfileHeader({onNewGroup}) {
                                     <p className="text-red-500 text-sm text-center">{addContactError}</p>
                                 )}
                                 {addContactSuccess && (
-                                    <p className="text-green-500 text-sm text-center">مخاطب با موفقیت اضافه شد ✅</p>
+                                    <p className="text-green-500 text-sm text-center">{t("addContact.success")}</p>
                                 )}
 
                                 <div>
-                                    <label className="text-slate-400 text-xs mb-1 block">شماره موبایل</label>
+                                    <label
+                                        className="text-slate-400 text-xs mb-1 block">{t("addContact.phoneLabel")}</label>
                                     <div className="relative flex items-center bg-slate-900/60 rounded-lg px-3 py-2">
                                         <PhoneIcon className="w-4 h-4 text-slate-400 flex-shrink-0"/>
                                         <input
@@ -1190,14 +1232,15 @@ function ProfileHeader({onNewGroup}) {
                                 </div>
 
                                 <div>
-                                    <label className="text-slate-400 text-xs mb-1 block">اسم مخاطب</label>
+                                    <label
+                                        className="text-slate-400 text-xs mb-1 block">{t("addContact.nameLabel")}</label>
                                     <div className="relative flex items-center bg-slate-900/60 rounded-lg px-3 py-2">
                                         <UserIcon className="w-4 h-4 text-slate-400 flex-shrink-0"/>
                                         <input
                                             type="text"
                                             value={contactDisplayName}
                                             onChange={(e) => setContactDisplayName(e.target.value)}
-                                            placeholder="مثلاً: علی رضایی"
+                                            placeholder={t("addContact.namePlaceholder")}
                                             className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500 mr-2"
                                         />
                                     </div>
@@ -1209,7 +1252,7 @@ function ProfileHeader({onNewGroup}) {
                                     className="w-full flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
                                 >
                                     <UserPlus className="w-4 h-4"/>
-                                    {isAddingContact ? "در حال افزودن..." : "افزودن مخاطب"}
+                                    {isAddingContact ? t("addContact.adding") : t("addContact.submit")}
                                 </button>
                             </form>
                         )}
@@ -1224,7 +1267,7 @@ function ProfileHeader({onNewGroup}) {
                                             type="text"
                                             value={contactQuery}
                                             onChange={(e) => handleContactQueryChange(e.target.value)}
-                                            placeholder="ایمیل کاربر را وارد کنید..."
+                                            placeholder={t("common.emailSearchPlaceholder")}
                                             className="bg-transparent outline-none text-sm text-slate-200 w-full placeholder:text-slate-500"
                                         />
                                     </div>
@@ -1232,16 +1275,16 @@ function ProfileHeader({onNewGroup}) {
 
                                 <div className="overflow-y-auto flex-1">
                                     {isSearching && (
-                                        <p className="text-center text-slate-500 text-sm py-4">در حال جستجو...</p>
+                                        <p className="text-center text-slate-500 text-sm py-4">{t("common.searching")}</p>
                                     )}
 
                                     {!isSearching && contactQuery.trim() && searchResults.length === 0 && (
-                                        <p className="text-center text-slate-500 text-sm py-4">کاربری یافت نشد</p>
+                                        <p className="text-center text-slate-500 text-sm py-4">{t("common.noUserFound")}</p>
                                     )}
 
                                     {!contactQuery.trim() && (
                                         <p className="text-center text-slate-500 text-sm py-6">
-                                            با ایمیل، مخاطب موردنظرت رو جستجو کن
+                                            {t("addContact.searchHint")}
                                         </p>
                                     )}
 
@@ -1268,7 +1311,7 @@ function ProfileHeader({onNewGroup}) {
                                             {user.is_contact ? (
                                                 <span
                                                     className="flex items-center gap-1 text-green-400 text-xs flex-shrink-0">
-                                                    <Check className="w-4 h-4"/> افزوده شد
+                                                    <Check className="w-4 h-4"/> {t("addContact.added")}
                                                 </span>
                                             ) : (
                                                 <button
@@ -1277,7 +1320,7 @@ function ProfileHeader({onNewGroup}) {
                                                     className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-md flex-shrink-0 transition-colors"
                                                 >
                                                     <UserPlus className="w-3.5 h-3.5"/>
-                                                    {addingId === user.id ? "..." : "افزودن"}
+                                                    {addingId === user.id ? "..." : t("member.addBtn")}
                                                 </button>
                                             )}
                                         </div>
@@ -1300,7 +1343,7 @@ function ProfileHeader({onNewGroup}) {
                     >
                         <div
                             className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
-                            <h3 className="text-slate-100 font-semibold text-base">ساخت گروه جدید</h3>
+                            <h3 className="text-slate-100 font-semibold text-base">{t("createGroup.title")}</h3>
                             <button onClick={closeCreateGroup}
                                     className="text-slate-400 hover:text-white transition-colors">
                                 <XIcon className="w-5 h-5"/>
@@ -1309,22 +1352,24 @@ function ProfileHeader({onNewGroup}) {
 
                         <div className="overflow-y-auto flex-1 p-4 space-y-4">
                             <div>
-                                <label className="text-slate-400 text-xs mb-1 block">نام گروه</label>
+                                <label
+                                    className="text-slate-400 text-xs mb-1 block">{t("createGroup.nameLabel")}</label>
                                 <input
                                     type="text"
                                     value={groupName}
                                     onChange={(e) => setGroupName(e.target.value)}
-                                    placeholder="مثلاً: تیم پروژه"
+                                    placeholder={t("createGroup.namePlaceholder")}
                                     className="w-full bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:ring-1 focus:ring-cyan-500"
                                 />
                             </div>
 
                             <div>
-                                <label className="text-slate-400 text-xs mb-1 block">توضیحات (اختیاری)</label>
+                                <label
+                                    className="text-slate-400 text-xs mb-1 block">{t("createChannel.descLabel")}</label>
                                 <textarea
                                     value={groupDescription}
                                     onChange={(e) => setGroupDescription(e.target.value)}
-                                    placeholder="درباره‌ی این گروه بنویس..."
+                                    placeholder={t("group.descPlaceholder")}
                                     rows={2}
                                     className="w-full bg-slate-900/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500 resize-none focus:ring-1 focus:ring-cyan-500"
                                 />
@@ -1332,12 +1377,11 @@ function ProfileHeader({onNewGroup}) {
 
                             <div>
                                 <label className="text-slate-400 text-xs mb-2 block">
-                                    افزودن اعضا از
-                                    مخاطبین {selectedMemberIds.length > 0 && `(${selectedMemberIds.length} انتخاب شده)`}
+                                    {t("createGroup.addMembersLabel")} {selectedMemberIds.length > 0 && t("createGroup.selectedCount", {count: selectedMemberIds.length})}
                                 </label>
 
                                 {allContacts.length === 0 ? (
-                                    <p className="text-slate-500 text-xs py-3 text-center">مخاطبی برای افزودن نداری</p>
+                                    <p className="text-slate-500 text-xs py-3 text-center">{t("createGroup.noContacts")}</p>
                                 ) : (
                                     <div
                                         className="space-y-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700/50">
@@ -1393,7 +1437,7 @@ function ProfileHeader({onNewGroup}) {
                                 disabled={!groupName.trim() || isCreatingGroup}
                                 className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
                             >
-                                {isCreatingGroup ? "در حال ساخت..." : "ساخت گروه"}
+                                {isCreatingGroup ? t("createGroup.creating") : t("createGroup.submit")}
                             </button>
                         </div>
                     </div>
@@ -1422,7 +1466,7 @@ function ProfileHeader({onNewGroup}) {
                                     <>
                                         <div
                                             className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50 flex-shrink-0">
-                                            <h3 className="text-slate-100 font-semibold text-base">تنظیمات</h3>
+                                            <h3 className="text-slate-100 font-semibold text-base">{t("settings.title")}</h3>
                                             <button onClick={closeSettings}
                                                     className="text-slate-400 hover:text-white transition-colors">
                                                 <XIcon className="w-5 h-5"/>
@@ -1448,10 +1492,10 @@ function ProfileHeader({onNewGroup}) {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-slate-200 text-sm font-semibold truncate">
-                                                        {profile.first_name || "کاربر ناشناس"}
+                                                        {profile.first_name || t("common.unknownUser")}
                                                     </p>
                                                     <p className="text-slate-500 text-xs mt-0.5 truncate">
-                                                        {aboutText || "درباره من"}
+                                                        {aboutText || t("account.about")}
                                                     </p>
                                                 </div>
                                                 <ChevronLeft className="w-4 h-4 text-slate-500 flex-shrink-0"/>
@@ -1459,55 +1503,55 @@ function ProfileHeader({onNewGroup}) {
 
                                             <SettingRow
                                                 icon={Lock}
-                                                title="حریم خصوصی"
-                                                subtitle="آخرین بازدید، عکس پروفایل، رسید خوانده‌شدن"
+                                                title={t("settings.privacy")}
+                                                subtitle={t("settings.privacySub")}
                                                 onClick={() => setSettingsView("privacy")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Bell}
-                                                title="اعلان‌ها"
-                                                subtitle="پیام‌ها، گروه‌ها و تماس‌ها"
+                                                title={t("settings.notifications")}
+                                                subtitle={t("settings.notificationsSub")}
                                                 onClick={() => setSettingsView("notifications")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={MessageSquare}
-                                                title="چت‌ها"
-                                                subtitle="تم، اندازه فونت، ارسال با اینتر"
+                                                title={t("settings.chats")}
+                                                subtitle={t("settings.chatsSub")}
                                                 onClick={() => setSettingsView("chats")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Database}
-                                                title="ذخیره‌سازی و داده"
-                                                subtitle="دانلود خودکار رسانه‌ها"
+                                                title={t("settings.storage")}
+                                                subtitle={t("settings.storageSub")}
                                                 onClick={() => setSettingsView("storage")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Globe}
-                                                title="زبان"
-                                                subtitle={LANGUAGES[language]?.label || "فارسی"}
+                                                title={t("settings.language")}
+                                                subtitle={LANGUAGES[language2]?.label || "فارسی"}
                                                 onClick={() => setSettingsView("language")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={HelpCircle}
-                                                title="کمک"
-                                                subtitle="سوالات متداول، تماس با ما، درباره چتیفای"
+                                                title={t("settings.help")}
+                                                subtitle={t("settings.helpSub")}
                                                 onClick={() => setSettingsView("help")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Share2}
-                                                title="دعوت از دوستان"
-                                                subtitle="لینک عضویت رو با دوستات به اشتراک بذار"
+                                                title={t("settings.inviteFriends")}
+                                                subtitle={t("settings.inviteFriendsSub")}
                                                 onClick={handleInviteFriends}
                                             />
 
                                             <div className="h-2"/>
-                                            <SettingRow icon={LogOutIcon} title="خروج از حساب" danger
+                                            <SettingRow icon={LogOutIcon} title={t("settings.logout")} danger
                                                         onClick={handleLogout}/>
                                             <div className="h-4"/>
                                         </div>
@@ -1517,7 +1561,7 @@ function ProfileHeader({onNewGroup}) {
                                 {settingsView === "account" && (
                                     <>
                                         <SettingsSubHeader
-                                            title="اطلاعات حساب"
+                                            title={t("settings.account")}
                                             onBack={() => setSettingsView("main")}
                                             saving={settingsSaving}
                                         />
@@ -1535,7 +1579,8 @@ function ProfileHeader({onNewGroup}) {
                                                     />
                                                     <div
                                                         className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                                        <span className="text-white text-xs">تغییر عکس</span>
+                                                        <span
+                                                            className="text-white text-xs">{t("profile.changePhotoSettings")}</span>
                                                     </div>
                                                 </button>
                                                 <input
@@ -1547,7 +1592,7 @@ function ProfileHeader({onNewGroup}) {
                                                 />
                                             </div>
 
-                                            <SectionLabel>نام</SectionLabel>
+                                            <SectionLabel>{t("account.name")}</SectionLabel>
                                             <div className="px-4 pb-4">
                                                 <div
                                                     className="flex items-center bg-slate-900/60 rounded-lg px-3 py-2.5">
@@ -1565,7 +1610,7 @@ function ProfileHeader({onNewGroup}) {
                                                 </div>
                                             </div>
 
-                                            <SectionLabel>درباره من</SectionLabel>
+                                            <SectionLabel>{t("account.about")}</SectionLabel>
                                             <div className="px-4 pb-4">
                                                 <div
                                                     className="flex items-center bg-slate-900/60 rounded-lg px-3 py-2.5">
@@ -1580,10 +1625,10 @@ function ProfileHeader({onNewGroup}) {
                                                 </div>
                                             </div>
 
-                                            <SectionLabel>امنیت</SectionLabel>
+                                            <SectionLabel>{t("account.security")}</SectionLabel>
                                             <SettingRow
                                                 icon={KeyRound}
-                                                title="تغییر رمز عبور"
+                                                title={t("account.changePassword")}
                                                 onClick={() => {
                                                     setShowChangePassword((v) => !v);
                                                     setChangePasswordError("");
@@ -1598,21 +1643,20 @@ function ProfileHeader({onNewGroup}) {
                                                         <p className="text-red-400 text-xs text-center">{changePasswordError}</p>
                                                     )}
                                                     {changePasswordSuccess && (
-                                                        <p className="text-green-400 text-xs text-center">رمز عبور تغییر
-                                                            کرد ✅</p>
+                                                        <p className="text-green-400 text-xs text-center">{t("account.passwordChanged")}</p>
                                                     )}
                                                     <input
                                                         type="password"
                                                         value={oldPassword}
                                                         onChange={(e) => setOldPassword(e.target.value)}
-                                                        placeholder="رمز عبور فعلی"
+                                                        placeholder={t("account.oldPassword")}
                                                         className="w-full bg-slate-800 rounded-md px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500"
                                                     />
                                                     <input
                                                         type="password"
                                                         value={newPassword}
                                                         onChange={(e) => setNewPassword(e.target.value)}
-                                                        placeholder="رمز عبور جدید (حداقل ۸ کاراکتر)"
+                                                        placeholder={t("account.newPassword")}
                                                         className="w-full bg-slate-800 rounded-md px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500"
                                                     />
                                                     <button
@@ -1620,14 +1664,14 @@ function ProfileHeader({onNewGroup}) {
                                                         disabled={isChangingPassword}
                                                         className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white py-2 rounded-md text-sm font-medium transition-colors"
                                                     >
-                                                        {isChangingPassword ? "در حال ذخیره..." : "ذخیره رمز جدید"}
+                                                        {isChangingPassword ? t("common.saving") : t("account.saveNewPassword")}
                                                     </button>
                                                 </form>
                                             )}
 
                                             <SettingRow
                                                 icon={Shield}
-                                                title="تایید دو مرحله‌ای"
+                                                title={t("account.twoStep")}
                                                 onClick={() => bindToggle(setTwoStepEnabled, "two_step_enabled")(!twoStepEnabled)}
                                                 rightContent={
                                                     <ToggleSwitch
@@ -1640,7 +1684,7 @@ function ProfileHeader({onNewGroup}) {
                                             <div className="h-2"/>
                                             <SettingRow
                                                 icon={Trash2}
-                                                title="حذف حساب کاربری"
+                                                title={t("account.deleteAccount")}
                                                 danger
                                                 onClick={() => setShowDeleteAccountConfirm((v) => !v)}
                                             />
@@ -1649,8 +1693,7 @@ function ProfileHeader({onNewGroup}) {
                                                 <div
                                                     className="mx-4 mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 space-y-2">
                                                     <p className="text-red-300 text-xs leading-relaxed">
-                                                        با حذف حساب، تمام چت‌ها و اطلاعات تو برای همیشه پاک میشه. برای
-                                                        تایید رمزت رو وارد کن.
+                                                        {t("account.deleteWarning")}
                                                     </p>
                                                     {deleteAccountError && (
                                                         <p className="text-red-400 text-xs">{deleteAccountError}</p>
@@ -1659,7 +1702,7 @@ function ProfileHeader({onNewGroup}) {
                                                         type="password"
                                                         value={deletePassword}
                                                         onChange={(e) => setDeletePassword(e.target.value)}
-                                                        placeholder="رمز عبور"
+                                                        placeholder={t("account.password") || t("account.oldPassword")}
                                                         className="w-full bg-slate-900/60 rounded-md px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-500"
                                                     />
                                                     <div className="flex gap-2">
@@ -1671,14 +1714,14 @@ function ProfileHeader({onNewGroup}) {
                                                             }}
                                                             className="flex-1 py-1.5 rounded-md bg-slate-700 text-slate-300 text-xs"
                                                         >
-                                                            انصراف
+                                                            {t("common.cancel")}
                                                         </button>
                                                         <button
                                                             onClick={handleDeleteAccount}
                                                             disabled={isDeletingAccount}
                                                             className="flex-1 py-1.5 rounded-md bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs"
                                                         >
-                                                            {isDeletingAccount ? "..." : "حذف قطعی"}
+                                                            {isDeletingAccount ? "..." : t("account.deleteConfirm")}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1690,34 +1733,35 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "privacy" && (
                                     <>
-                                        <SettingsSubHeader title="حریم خصوصی" onBack={() => setSettingsView("main")}
+                                        <SettingsSubHeader title={t("settings.privacy")}
+                                                           onBack={() => setSettingsView("main")}
                                                            saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
-                                            <SectionLabel>چه کسانی می‌بینند</SectionLabel>
+                                            <SectionLabel>{t("privacy.whoSees")}</SectionLabel>
                                             <SettingRow
                                                 icon={Eye}
-                                                title="آخرین بازدید"
+                                                title={t("privacy.lastSeen")}
                                                 subtitle={visibilityLabel(lastSeen)}
                                                 onClick={() => cycleVisibility(lastSeen, setLastSeen, "last_seen_visibility")}
                                             />
                                             <SettingRow
                                                 icon={ImageIcon}
-                                                title="عکس پروفایل"
+                                                title={t("privacy.photo")}
                                                 subtitle={visibilityLabel(photoVisibility)}
                                                 onClick={() => cycleVisibility(photoVisibility, setPhotoVisibility, "photo_visibility")}
                                             />
                                             <SettingRow
                                                 icon={Info}
-                                                title="درباره من"
+                                                title={t("privacy.about")}
                                                 subtitle={visibilityLabel(aboutVisibility)}
                                                 onClick={() => cycleVisibility(aboutVisibility, setAboutVisibility, "about_visibility")}
                                             />
 
-                                            <SectionLabel>ارتباطات</SectionLabel>
+                                            <SectionLabel>{t("privacy.comm")}</SectionLabel>
                                             <SettingRow
                                                 icon={Check}
-                                                title="رسید خوانده شدن"
-                                                subtitle="نمایش تیک آبی برای طرف مقابل"
+                                                title={t("privacy.readReceipts")}
+                                                subtitle={t("privacy.readReceiptsSub")}
                                                 onClick={() => bindToggle(setReadReceipts, "read_receipts")(!readReceipts)}
                                                 rightContent={
                                                     <ToggleSwitch checked={readReceipts}
@@ -1726,7 +1770,7 @@ function ProfileHeader({onNewGroup}) {
                                             />
                                             <SettingRow
                                                 icon={onlineStatus ? Eye : EyeOff}
-                                                title="نمایش وضعیت آنلاین"
+                                                title={t("privacy.onlineStatus")}
                                                 onClick={() => bindToggle(setOnlineStatus, "online_status_visible")(!onlineStatus)}
                                                 rightContent={
                                                     <ToggleSwitch checked={onlineStatus}
@@ -1735,8 +1779,8 @@ function ProfileHeader({onNewGroup}) {
                                             />
                                             <SettingRow
                                                 icon={Shield}
-                                                title="مخاطبین مسدود شده"
-                                                subtitle={blockedContacts.length > 0 ? `${blockedContacts.length} مخاطب` : "هیچ‌کس"}
+                                                title={t("privacy.blockedContacts")}
+                                                subtitle={blockedContacts.length > 0 ? t("block.count", {count: blockedContacts.length}) : t("privacy.nobody")}
                                                 onClick={openBlockedView}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
@@ -1747,7 +1791,7 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "blocked" && (
                                     <>
-                                        <SettingsSubHeader title="مخاطبین مسدود شده"
+                                        <SettingsSubHeader title={t("privacy.blockedContacts")}
                                                            onBack={() => setSettingsView("privacy")}/>
                                         <div className="overflow-y-auto flex-1">
                                             {blockedLoading && (
@@ -1758,7 +1802,7 @@ function ProfileHeader({onNewGroup}) {
 
                                             {!blockedLoading && blockedContacts.length === 0 && (
                                                 <p className="text-center text-slate-500 text-sm py-10">
-                                                    هیچ مخاطبی مسدود نکردی
+                                                    {t("block.noneBlocked")}
                                                 </p>
                                             )}
 
@@ -1786,7 +1830,7 @@ function ProfileHeader({onNewGroup}) {
                                                             disabled={unblockingId === c.id}
                                                             className="text-xs px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 flex-shrink-0 transition-colors"
                                                         >
-                                                            {unblockingId === c.id ? "..." : "رفع مسدودیت"}
+                                                            {unblockingId === c.id ? "..." : t("block.unblock")}
                                                         </button>
                                                     </div>
                                                 ))}
@@ -1797,13 +1841,14 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "notifications" && (
                                     <>
-                                        <SettingsSubHeader title="اعلان‌ها" onBack={() => setSettingsView("main")}
+                                        <SettingsSubHeader title={t("settings.notifications")}
+                                                           onBack={() => setSettingsView("main")}
                                                            saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
-                                            <SectionLabel>پیام‌ها</SectionLabel>
+                                            <SectionLabel>{t("notif.messages")}</SectionLabel>
                                             <SettingRow
                                                 icon={notifMessages ? Bell : BellOff}
-                                                title="اعلان پیام‌های جدید"
+                                                title={t("notif.newMessage")}
                                                 onClick={() => bindToggle(setNotifMessages, "notif_messages", "notifMessages")(!notifMessages)}
                                                 rightContent={
                                                     <ToggleSwitch checked={notifMessages}
@@ -1812,7 +1857,7 @@ function ProfileHeader({onNewGroup}) {
                                             />
                                             <SettingRow
                                                 icon={Eye}
-                                                title="نمایش متن پیام در اعلان"
+                                                title={t("notif.preview")}
                                                 onClick={() => bindToggle(setNotifPreview, "notif_preview", "notifPreview")(!notifPreview)}
                                                 rightContent={
                                                     <ToggleSwitch checked={notifPreview}
@@ -1820,10 +1865,10 @@ function ProfileHeader({onNewGroup}) {
                                                 }
                                             />
 
-                                            <SectionLabel>گروه‌ها</SectionLabel>
+                                            <SectionLabel>{t("notif.groups")}</SectionLabel>
                                             <SettingRow
                                                 icon={UsersIcon}
-                                                title="اعلان پیام‌های گروه"
+                                                title={t("notif.groupMessages")}
                                                 onClick={() => bindToggle(setNotifGroups, "notif_groups", "notifGroups")(!notifGroups)}
                                                 rightContent={
                                                     <ToggleSwitch checked={notifGroups}
@@ -1831,10 +1876,10 @@ function ProfileHeader({onNewGroup}) {
                                                 }
                                             />
 
-                                            <SectionLabel>تماس‌ها</SectionLabel>
+                                            <SectionLabel>{t("notif.calls")}</SectionLabel>
                                             <SettingRow
                                                 icon={PhoneIcon}
-                                                title="اعلان تماس‌های ورودی"
+                                                title={t("notif.incomingCalls")}
                                                 onClick={() => bindToggle(setNotifCalls, "notif_calls", "notifCalls")(!notifCalls)}
                                                 rightContent={
                                                     <ToggleSwitch checked={notifCalls}
@@ -1842,10 +1887,10 @@ function ProfileHeader({onNewGroup}) {
                                                 }
                                             />
 
-                                            <SectionLabel>عمومی</SectionLabel>
+                                            <SectionLabel>{t("notif.general")}</SectionLabel>
                                             <SettingRow
                                                 icon={Smartphone}
-                                                title="لرزش"
+                                                title={t("notif.vibrate")}
                                                 onClick={() => bindToggle(setNotifVibrate, "notif_vibrate", "notifVibrate")(!notifVibrate)}
                                                 rightContent={
                                                     <ToggleSwitch checked={notifVibrate}
@@ -1854,7 +1899,7 @@ function ProfileHeader({onNewGroup}) {
                                             />
                                             <SettingRow
                                                 icon={isSoundEnabled ? Volume2Icon : VolumeOffIcon}
-                                                title="صدای اعلان"
+                                                title={t("notif.sound")}
                                                 onClick={handleSoundToggleInSettings}
                                                 rightContent={<ToggleSwitch checked={isSoundEnabled}
                                                                             onChange={handleSoundToggleInSettings}/>}
@@ -1866,51 +1911,43 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "chats" && (
                                     <>
-                                        <SettingsSubHeader title="چت‌ها" onBack={() => setSettingsView("main")}
+                                        <SettingsSubHeader title={t("settings.chats")}
+                                                           onBack={() => setSettingsView("main")}
                                                            saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
-                                            <SectionLabel>ظاهر</SectionLabel>
-                                            <SettingRow
-                                                icon={MessageSquare}
-                                                title="تم تیره"
-                                                subtitle={darkTheme ? "روشن" : "خاموش"}
-                                                onClick={() => bindToggle(setDarkTheme, "dark_theme")(!darkTheme)}
-                                                rightContent={
-                                                    <ToggleSwitch checked={darkTheme}
-                                                                  onChange={bindToggle(setDarkTheme, "dark_theme")}/>
-                                                }
-                                            />
+                                            <SectionLabel>{t("chats.appearance")}</SectionLabel>
+
                                             <SettingRow
                                                 icon={ImageIcon}
-                                                title="پس‌زمینه چت"
-                                                subtitle={WALLPAPER_OPTIONS.find((w) => w.id === chatWallpaper)?.label || "پیش‌فرض"}
+                                                title={t("chats.background")}
+                                                subtitle={WALLPAPER_OPTIONS.find((w) => w.id === chatWallpaper)?.label || t("chats.defaultValue")}
                                                 onClick={() => setSettingsView("wallpaper")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={ChevronDown}
-                                                title="اندازه فونت"
+                                                title={t("chats.fontSize")}
                                                 subtitle={fontSizeLabel(fontSize)}
                                                 onClick={cycleFontSize}
                                             />
 
-                                            <SectionLabel>رفتار ارسال</SectionLabel>
+                                            <SectionLabel>{t("chats.sendBehavior")}</SectionLabel>
                                             <SettingRow
                                                 icon={Check}
-                                                title="ارسال با Enter"
-                                                subtitle="فعال کردن ارسال پیام با زدن اینتر"
-                                                onClick={() => bindToggle(setEnterToSend, "enter_to_send")(!enterToSend)}
+                                                title={t("chats.enterToSend")}
+                                                subtitle={t("chats.enterToSend")}
+                                                onClick={() => bindToggle(setEnterToSend, "enter_to_send", "enterToSend")(!enterToSend)}
                                                 rightContent={
                                                     <ToggleSwitch checked={enterToSend}
-                                                                  onChange={bindToggle(setEnterToSend, "enter_to_send")}/>
+                                                                  onChange={bindToggle(setEnterToSend, "enter_to_send", "enterToSend")}/>
                                                 }
                                             />
 
-                                            <SectionLabel>پشتیبان‌گیری</SectionLabel>
+                                            <SectionLabel>{t("chats.backup")}</SectionLabel>
                                             <SettingRow
                                                 icon={Database}
-                                                title="پشتیبان‌گیری از چت‌ها"
-                                                subtitle={backupInProgress ? "در حال آماده‌سازی..." : formatBackupDate(lastBackupAt)}
+                                                title={t("chats.backupChats")}
+                                                subtitle={backupInProgress ? t("backup.preparing") : formatBackupDate(lastBackupAt)}
                                                 onClick={backupInProgress ? undefined : handleBackupChats}
                                             />
                                             <div className="h-4"/>
@@ -1920,7 +1957,8 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "wallpaper" && (
                                     <>
-                                        <SettingsSubHeader title="پس‌زمینه چت" onBack={() => setSettingsView("chats")}
+                                        <SettingsSubHeader title={t("wallpaper.title")}
+                                                           onBack={() => setSettingsView("chats")}
                                                            saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1 p-4">
                                             <div className="grid grid-cols-3 gap-3">
@@ -1956,14 +1994,14 @@ function ProfileHeader({onNewGroup}) {
                                 )}
                                 {settingsView === "storage" && (
                                     <>
-                                        <SettingsSubHeader title="ذخیره‌سازی و داده"
+                                        <SettingsSubHeader title={t("settings.storage")}
                                                            onBack={() => setSettingsView("main")}
                                                            saving={settingsSaving}/>
                                         <div className="overflow-y-auto flex-1">
-                                            <SectionLabel>دانلود خودکار رسانه</SectionLabel>
+                                            <SectionLabel>{t("storage.autoDownload")}</SectionLabel>
                                             <SettingRow
                                                 icon={ImageIcon}
-                                                title="در وای‌فای"
+                                                title={t("storage.onWifi")}
                                                 onClick={() => bindToggle(setAutoDownloadWifi, "auto_download_wifi")(!autoDownloadWifi)}
                                                 rightContent={
                                                     <ToggleSwitch checked={autoDownloadWifi}
@@ -1972,7 +2010,7 @@ function ProfileHeader({onNewGroup}) {
                                             />
                                             <SettingRow
                                                 icon={Smartphone}
-                                                title="در اینترنت موبایل"
+                                                title={t("storage.onMobile")}
                                                 onClick={() => bindToggle(setAutoDownloadMobile, "auto_download_mobile")(!autoDownloadMobile)}
                                                 rightContent={
                                                     <ToggleSwitch checked={autoDownloadMobile}
@@ -1980,17 +2018,17 @@ function ProfileHeader({onNewGroup}) {
                                                 }
                                             />
 
-                                            <SectionLabel>مصرف فضا</SectionLabel>
+                                            <SectionLabel>{t("storage.usage")}</SectionLabel>
                                             <SettingRow
                                                 icon={Database}
-                                                title="مدیریت فضای ذخیره‌سازی"
-                                                subtitle={storageSummary ? `${formatBytes(storageSummary.totalBytes)} مصرف شده` : "برای مشاهده کلیک کن"}
+                                                title={t("storage.manage")}
+                                                subtitle={storageSummary ? `${formatBytes(storageSummary.totalBytes)} ${t("storage.consumed")}` : t("storage.clickToView")}
                                                 onClick={openStorageManage}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Trash2}
-                                                title={cacheCleared ? "حافظه پنهان پاک شد ✅" : "پاک کردن حافظه پنهان"}
+                                                title={cacheCleared ? t("storage.cacheCleared") : t("storage.clearCache")}
                                                 danger={!cacheCleared}
                                                 onClick={handleClearCache}
                                             />
@@ -2001,7 +2039,7 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "storage-manage" && (
                                     <>
-                                        <SettingsSubHeader title="مدیریت فضای ذخیره‌سازی"
+                                        <SettingsSubHeader title={t("storage.manage")}
                                                            onBack={() => setSettingsView("storage")}/>
                                         <div className="overflow-y-auto flex-1">
                                             {storageLoading && (
@@ -2016,8 +2054,7 @@ function ProfileHeader({onNewGroup}) {
                                                         <p className="text-3xl font-bold text-cyan-400">
                                                             {formatBytes(storageSummary.totalBytes)}
                                                         </p>
-                                                        <p className="text-slate-500 text-xs mt-1">کل فضای مصرف‌شده توسط
-                                                            رسانه‌ها</p>
+                                                        <p className="text-slate-500 text-xs mt-1">{t("storage.totalUsedByMedia")}</p>
                                                     </div>
 
                                                     {storageSummary.totalBytes > 0 && (
@@ -2039,7 +2076,7 @@ function ProfileHeader({onNewGroup}) {
                                                         </div>
                                                     )}
 
-                                                    <SectionLabel>تفکیک بر اساس نوع</SectionLabel>
+                                                    <SectionLabel>{t("storage.breakdownByType")}</SectionLabel>
                                                     {storageSummary.breakdown.map((b, i) => {
                                                         const icons = {
                                                             image: ImageIcon,
@@ -2054,7 +2091,7 @@ function ProfileHeader({onNewGroup}) {
                                                                 key={b.type}
                                                                 icon={Icon}
                                                                 title={b.label}
-                                                                subtitle={`${b.count} مورد`}
+                                                                subtitle={t("storage.itemCount", {count: b.count})}
                                                                 onClick={b.count > 0 ? () => openStorageItems(b.type) : undefined}
                                                                 rightContent={
                                                                     <div className="flex items-center gap-2">
@@ -2078,7 +2115,7 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "storage-items" && (
                                     <>
-                                        <SettingsSubHeader title="فایل‌ها"
+                                        <SettingsSubHeader title={t("storage.filesTitle")}
                                                            onBack={() => setSettingsView("storage-manage")}/>
                                         <div className="overflow-y-auto flex-1">
                                             {storageItemsLoading && (
@@ -2088,8 +2125,7 @@ function ProfileHeader({onNewGroup}) {
                                             )}
 
                                             {!storageItemsLoading && storageItems.length === 0 && (
-                                                <p className="text-center text-slate-500 text-sm py-10">چیزی پیدا
-                                                    نشد</p>
+                                                <p className="text-center text-slate-500 text-sm py-10">{t("storage.nothingFound")}</p>
                                             )}
 
                                             {!storageItemsLoading &&
@@ -2113,7 +2149,7 @@ function ProfileHeader({onNewGroup}) {
                                                                 )}
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <p className="text-slate-200 text-sm truncate">{item.fileName || "بدون نام"}</p>
+                                                                <p className="text-slate-200 text-sm truncate">{item.fileName || t("storage.noName")}</p>
                                                                 <p className="text-slate-500 text-xs truncate">
                                                                     {item.withUser} · {formatBytes(item.bytes)}
                                                                 </p>
@@ -2139,8 +2175,8 @@ function ProfileHeader({onNewGroup}) {
                                                     className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
                                                 >
                                                     {deletingStorage
-                                                        ? "در حال حذف..."
-                                                        : `حذف ${selectedStorageItems.length} مورد و آزاد کردن فضا`}
+                                                        ? t("common.deleting")
+                                                        : t("storage.deleteSelected", {count: selectedStorageItems.length})}
                                                 </button>
                                             </div>
                                         )}
@@ -2149,10 +2185,11 @@ function ProfileHeader({onNewGroup}) {
 
                                 {settingsView === "language" && (
                                     <>
-                                        <SettingsSubHeader title="زبان برنامه" onBack={() => setSettingsView("main")}
+                                        <SettingsSubHeader title={t("settings.language")}
+                                                           onBack={() => setSettingsView("main")}
                                                            saving={settingsSaving}/>
                                         <RadioOptionGroup
-                                            value={language}
+                                            value={language2}
                                             onChange={handleLanguageChange}
                                             options={[
                                                 {value: "fa", label: "فارسی"},
@@ -2166,30 +2203,31 @@ function ProfileHeader({onNewGroup}) {
                                 {settingsView === "help" && (
                                     <>
 
-                                        <SettingsSubHeader title="کمک" onBack={() => setSettingsView("main")}/>
+                                        <SettingsSubHeader title={t("settings.help")}
+                                                           onBack={() => setSettingsView("main")}/>
                                         <div className="overflow-y-auto flex-1">
                                             <SettingRow
                                                 icon={HelpCircle}
-                                                title="سوالات متداول"
+                                                title={t("help.faq")}
                                                 onClick={() => setSettingsView("faq")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={MailIcon}
-                                                title="تماس با ما"
+                                                title={t("help.contact")}
                                                 onClick={() => setSettingsView("contact")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Shield}
-                                                title="سیاست حفظ حریم خصوصی"
+                                                title={t("help.privacyPolicy")}
                                                 onClick={() => setSettingsView("privacy_policy")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
                                             <SettingRow
                                                 icon={Info}
-                                                title="درباره چتیفای"
-                                                subtitle={`نسخه ${APP_VERSION}`}
+                                                title={t("help.about")}
+                                                subtitle={`${t("help.version")} ${APP_VERSION}`}
                                                 onClick={() => setSettingsView("about")}
                                                 rightContent={<ChevronLeft className="w-4 h-4 text-slate-500"/>}
                                             />
@@ -2201,7 +2239,7 @@ function ProfileHeader({onNewGroup}) {
                                 {/* ============================== سوالات متداول ============================== */}
                                 {settingsView === "faq" && (
                                     <>
-                                        <SettingsSubHeader title="سوالات متداول"
+                                        <SettingsSubHeader title={t("help.faq")}
                                                            onBack={() => setSettingsView("help")}/>
                                         <div className="overflow-y-auto flex-1 py-2">
                                             {FAQ_ITEMS.map((item, idx) => {
@@ -2241,12 +2279,11 @@ function ProfileHeader({onNewGroup}) {
                                 {/* ============================== تماس با ما ============================== */}
                                 {settingsView === "contact" && (
                                     <>
-                                        <SettingsSubHeader title="تماس با ما" onBack={() => setSettingsView("help")}/>
+                                        <SettingsSubHeader title={t("help.contact")}
+                                                           onBack={() => setSettingsView("help")}/>
                                         <div className="overflow-y-auto flex-1">
                                             <p className="px-4 pt-4 pb-2 text-slate-400 text-xs leading-relaxed">
-                                                هر سوال، مشکل یا پیشنهادی داشتی، از یکی از راه‌های زیر باهامون در ارتباط
-                                                باش. تیم پشتیبانی معمولاً ظرف
-                                                ۲۴ ساعت پاسخ می‌ده.
+                                                {t("contact.intro")}
                                             </p>
 
                                             <a
@@ -2258,7 +2295,7 @@ function ProfileHeader({onNewGroup}) {
                                                     <MailIcon className="h-4.5 w-4.5"/>
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-slate-200">ایمیل پشتیبانی</p>
+                                                    <p className="text-sm font-medium text-slate-200">{t("contact.emailLabel")}</p>
                                                     <p className="text-slate-500 text-xs mt-0.5" dir="ltr">
                                                         {SUPPORT_EMAIL}
                                                     </p>
@@ -2268,7 +2305,7 @@ function ProfileHeader({onNewGroup}) {
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         navigator.clipboard?.writeText(SUPPORT_EMAIL);
-                                                        toast.success("ایمیل کپی شد");
+                                                        toast.success(t("contact.emailCopied"));
                                                     }}
                                                     className="text-slate-500 hover:text-slate-300 flex-shrink-0 p-1.5"
                                                 >
@@ -2287,10 +2324,8 @@ function ProfileHeader({onNewGroup}) {
                                                     <TelegramIcon className="h-4.5 w-4.5"/>
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-slate-200">پشتیبانی در
-                                                        تلگرام</p>
-                                                    <p className="text-slate-500 text-xs mt-0.5">پاسخ سریع‌تر برای
-                                                        مشکلات فوری</p>
+                                                    <p className="text-sm font-medium text-slate-200">{t("contact.telegramLabel")}</p>
+                                                    <p className="text-slate-500 text-xs mt-0.5">{t("contact.telegramSub")}</p>
                                                 </div>
                                                 <ExternalLink className="w-3.5 h-3.5 text-slate-500 flex-shrink-0"/>
                                             </a>
@@ -2303,59 +2338,35 @@ function ProfileHeader({onNewGroup}) {
                                 {/* ============================== سیاست حفظ حریم خصوصی ============================== */}
                                 {settingsView === "privacy_policy" && (
                                     <>
-                                        <SettingsSubHeader title="سیاست حفظ حریم خصوصی"
+                                        <SettingsSubHeader title={t("help.privacyPolicy")}
                                                            onBack={() => setSettingsView("help")}/>
                                         <div
                                             className="overflow-y-auto flex-1 px-4 py-4 space-y-4 text-slate-400 text-xs leading-relaxed">
-                                            <p className="text-slate-500">آخرین بروزرسانی: مرداد ۱۴۰۴</p>
+                                            <p className="text-slate-500">{t("privacyPolicy.updated")}</p>
 
                                             <div>
-                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۱. چه
-                                                    اطلاعاتی جمع‌آوری می‌کنیم</h4>
-                                                <p>
-                                                    شماره موبایل یا ایمیل، نام نمایشی، عکس پروفایل، و پیام‌هایی که برای
-                                                    ارسال از طریق سرویس ما رد و
-                                                    بدل می‌کنی. لوکیشن فقط زمانی ذخیره می‌شه که خودت صریحاً از طریق
-                                                    دکمه‌ی اشتراک لوکیشن بفرستیش.
-                                                </p>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">{t("privacyPolicy.s1Title")}</h4>
+                                                <p>{t("privacyPolicy.s1Body")}</p>
                                             </div>
 
                                             <div>
-                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۲. چطور
-                                                    ازشون استفاده می‌کنیم</h4>
-                                                <p>
-                                                    این اطلاعات فقط برای ارائه‌ی سرویس چت (تحویل پیام، اعلان‌ها، مدیریت
-                                                    مخاطبین) استفاده می‌شن. هیچ
-                                                    داده‌ای به شخص ثالث برای اهداف تبلیغاتی فروخته نمی‌شه.
-                                                </p>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">{t("privacyPolicy.s2Title")}</h4>
+                                                <p>{t("privacyPolicy.s2Body")}</p>
                                             </div>
 
                                             <div>
-                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۳. مسدودسازی
-                                                    و گزارش</h4>
-                                                <p>
-                                                    وقتی کاربری رو مسدود می‌کنی، اون کاربر دیگه نمی‌تونه پیام یا تماسی
-                                                    برات بفرسته. گزارش‌هایی که ثبت
-                                                    می‌کنی محرمانه بررسی می‌شن و فقط برای اقدامات مدیریتی استفاده می‌شن.
-                                                </p>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">{t("privacyPolicy.s3Title")}</h4>
+                                                <p>{t("privacyPolicy.s3Body")}</p>
                                             </div>
 
                                             <div>
-                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۴. حذف
-                                                    حساب</h4>
-                                                <p>
-                                                    با حذف حساب از بخش تنظیمات، تمام پیام‌ها، مخاطبین و اطلاعات پروفایلت
-                                                    به‌صورت دائمی از سرور حذف
-                                                    می‌شه و برگشت‌ناپذیره.
-                                                </p>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">{t("privacyPolicy.s4Title")}</h4>
+                                                <p>{t("privacyPolicy.s4Body")}</p>
                                             </div>
 
                                             <div>
-                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">۵. تماس</h4>
-                                                <p>
-                                                    برای هر سوالی درباره‌ی حریم خصوصی، از بخش «تماس با ما» با تیم
-                                                    پشتیبانی در ارتباط باش.
-                                                </p>
+                                                <h4 className="text-slate-200 text-sm font-semibold mb-1.5">{t("privacyPolicy.s5Title")}</h4>
+                                                <p>{t("privacyPolicy.s5Body")}</p>
                                             </div>
                                         </div>
                                     </>
@@ -2364,7 +2375,7 @@ function ProfileHeader({onNewGroup}) {
                                 {/* ============================== درباره چتیفای ============================== */}
                                 {settingsView === "about" && (
                                     <>
-                                        <SettingsSubHeader title="درباره چتیفای"
+                                        <SettingsSubHeader title={t("help.about")}
                                                            onBack={() => setSettingsView("help")}/>
                                         <div
                                             className="overflow-y-auto flex-1 flex flex-col items-center px-6 py-8 text-center">
@@ -2373,11 +2384,10 @@ function ProfileHeader({onNewGroup}) {
                                                 <span className="text-white text-3xl font-bold">چ</span>
                                             </div>
                                             <h3 className="text-slate-100 text-lg font-semibold">چتیفای</h3>
-                                            <p className="text-slate-500 text-xs mt-1">نسخه {APP_VERSION}</p>
+                                            <p className="text-slate-500 text-xs mt-1">{t("help.version")} {APP_VERSION}</p>
 
                                             <p className="text-slate-400 text-xs leading-relaxed mt-4 max-w-xs">
-                                                چتیفای یه پیام‌رسان سریع، امن و ساده‌ست که با هدف ارتباط راحت‌تر بین
-                                                دوستان و تیم‌ها ساخته شده.
+                                                {t("about.description")}
                                             </p>
 
                                             <div className="w-full mt-6 space-y-2">
@@ -2388,7 +2398,7 @@ function ProfileHeader({onNewGroup}) {
                                                     className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-slate-900/50 text-slate-300 text-sm hover:bg-slate-900/80 transition-colors"
                                                 >
                                                     <TelegramIcon className="w-4 h-4"/>
-                                                    کانال تلگرام
+                                                    {t("about.telegramChannel")}
                                                 </a>
                                                 <a
                                                     href="https://github.com/mohammadmatin2000"
@@ -2397,13 +2407,14 @@ function ProfileHeader({onNewGroup}) {
                                                     className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-slate-900/50 text-slate-300 text-sm hover:bg-slate-900/80 transition-colors"
                                                 >
                                                     <Github className="w-4 h-4"/>
-                                                    گیت‌هاب پروژه
+                                                    {t("about.githubProject")}
                                                 </a>
                                             </div>
 
                                             <p className="flex items-center gap-1 text-slate-600 text-[11px] mt-8">
-                                                <Heart className="w-3 h-3 fill-red-500 text-red-500"/>ساخته‌شده با متین
-                                                در ایران<Heart className="w-3 h-3 fill-red-500 text-red-500"/>
+                                                <Heart
+                                                    className="w-3 h-3 fill-red-500 text-red-500"/>{t("about.madeWith")} متین {t("about.inIran")}<Heart
+                                                className="w-3 h-3 fill-red-500 text-red-500"/>
                                             </p>
                                         </div>
                                     </>

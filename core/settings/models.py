@@ -57,7 +57,6 @@ class UserSettings(models.Model):
     sound_enabled = models.BooleanField(default=True)
 
     # ---- Chats ----
-    dark_theme = models.BooleanField(default=True)
     enter_to_send = models.BooleanField(default=True)
     font_size = models.CharField(max_length=10, choices=FontSizeChoices.choices, default=FontSizeChoices.MEDIUM)
     chat_wallpaper = models.CharField(

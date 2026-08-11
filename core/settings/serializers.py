@@ -21,7 +21,6 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             "notif_preview",
             "notif_vibrate",
             "sound_enabled",
-            "dark_theme",
             "enter_to_send",
             "font_size",
             "chat_wallpaper",
