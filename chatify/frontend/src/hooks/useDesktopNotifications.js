@@ -15,12 +15,14 @@ export default function useDesktopNotifications() {
         });
     }, []);
 
-    // درخواست مجوز نوتیفیکیشن فقط یک بار
+    // ✅ FIX: درخواست مجوز نوتیفیکیشن فقط یک بار — پرامیسش رو هم هندل می‌کنیم
     useEffect(() => {
         if (typeof Notification === "undefined") return;
 
         if (Notification.permission === "default") {
-            Notification.requestPermission();
+            Notification.requestPermission().catch((err) => {
+                console.warn("❌ خطا در درخواست مجوز نوتیفیکیشن:", err);
+            });
         }
     }, []);
 
@@ -28,188 +30,103 @@ export default function useDesktopNotifications() {
     useEffect(() => {
         if (typeof Notification === "undefined") return;
 
-        const unsubscribe =
-            useChatStore.getState().addMessageEventListener((data) => {
-                console.log("🔔 notif event received:", data);
+        console.debug("🔔 [notif] listener registered, waiting for new_message_notify...");
 
-                if (data.type !== "new_message_notify") return;
+        return useChatStore.getState().addMessageEventListener((data) => {
+            console.debug("🔔 [notif] event received:", data.type, data);
 
-                const { authUser } = useAuthStore.getState();
-                const msg = data.message;
+            if (data.type !== "new_message_notify") return;
 
-                if (!msg) return;
+            const { authUser } = useAuthStore.getState();
+            const msg = data.message;
+            if (!msg) {
+                console.debug("🔔 [notif] blocked: no msg payload");
+                return;
+            }
 
-                // =====================================================
-                // بررسی فرستنده
-                // =====================================================
+            // =====================================================
+            // بررسی فرستنده — پیام از خودمون نباشه
+            // =====================================================
+            const senderId = msg.senderId ?? msg.sender;
+            if (senderId && authUser?.id && String(senderId) === String(authUser.id)) {
+                console.debug("🔔 [notif] blocked: message is from myself");
+                return;
+            }
 
-                const senderId = msg.senderId ?? msg.sender;
+            // =====================================================
+            // ✅ FIX: بک‌اند فیلدهای chatType/chatName/senderImage/chatId
+            // رو اصلاً نمی‌فرسته — پیام‌های خصوصی همیشه از همین سوکت
+            // میان (پیام گروه/چنل مسیر جدایی داره)، پس همیشه private
+            // فرض می‌کنیم و اسم/عکس فرستنده رو از لیست مخاطبین درمیاریم.
+            // =====================================================
+            const chatType = "private";
 
-                console.log(
-                    "👤 senderId:",
-                    senderId,
-                    "| authUser.id:",
-                    authUser?.id
-                );
-
-                // پیام از خودمون نباشه
-                if (
-                    senderId &&
-                    authUser?.id &&
-                    String(senderId) === String(authUser.id)
-                ) {
-                    console.log("⛔ رد شد: پیام از خودمونه");
+            if (chatType === "group" || chatType === "channel") {
+                if (!settingsRef.current.notifGroups) {
+                    console.debug("🔔 [notif] blocked: notifGroups is off in settings");
                     return;
                 }
-
-                // =====================================================
-                // تنظیمات Notification
-                // =====================================================
-
-                const settings = settingsRef.current;
-
-                const chatType = msg.chatType || "private";
-
-                console.log(
-                    "⚙️ settings:",
-                    settings,
-                    "| chatType:",
-                    chatType
-                );
-
-                // =====================================================
-                // بررسی فعال بودن Notification برای نوع چت
-                // =====================================================
-
-                if (chatType === "group" || chatType === "channel") {
-                    if (!settings.notifGroups) {
-                        console.log(
-                            "⛔ رد شد: notifGroups خاموشه"
-                        );
-                        return;
-                    }
-                } else {
-                    if (!settings.notifMessages) {
-                        console.log(
-                            "⛔ رد شد: notifMessages خاموشه"
-                        );
-                        return;
-                    }
-                }
-
-                // =====================================================
-                // بررسی Permission
-                // =====================================================
-
-                if (Notification.permission !== "granted") {
-                    console.log(
-                        "⛔ رد شد: permission نداریم"
-                    );
+            } else {
+                if (!settingsRef.current.notifMessages) {
+                    console.debug("🔔 [notif] blocked: notifMessages is off in settings", settingsRef.current);
                     return;
                 }
+            }
 
-                // =====================================================
-                // اگر کاربر داخل سایت است Notification نساز
-                // =====================================================
+            if (Notification.permission !== "granted") {
+                console.debug("🔔 [notif] blocked: permission is", Notification.permission);
+                return;
+            }
 
-                if (document.visibilityState === "visible") {
-                    console.log(
-                        "⛔ رد شد: تب visible هست"
-                    );
-                    return;
-                }
+            // اگر کاربر داخل خودِ تب فعاله، نوتیف نساز
+            if (document.visibilityState === "visible") {
+                console.debug("🔔 [notif] blocked: tab is visible (document.visibilityState === 'visible')");
+                return;
+            }
 
-                console.log(
-                    "✅ نوتیف باید ساخته بشه!"
-                );
+            // =====================================================
+            // ✅ FIX: پیدا کردن اسم و عکس فرستنده از لیست مخاطبین
+            // (چون خودِ پیام این اطلاعات رو نداره)
+            // =====================================================
+            const { allContacts } = useChatStore.getState();
+            const senderContact = allContacts.find(
+                (c) => String(c._id || c.id) === String(senderId)
+            );
+            const senderName = senderContact?.name || "پیام جدید";
 
-                // =====================================================
-                // عنوان Notification
-                // =====================================================
+            const rawImage = senderContact?.profile || senderContact?.raw?.profile;
+            const icon = rawImage
+                ? rawImage.startsWith("http")
+                    ? rawImage
+                    : `${API_BASE_URL}${rawImage}`
+                : "/avatar.png";
 
-                const title =
-                    chatType === "group" ||
-                    chatType === "channel"
-                        ? msg.chatName || "پیام جدید"
-                        : msg.senderName || "پیام جدید";
+            const title = senderName;
 
-                // =====================================================
-                // متن Notification
-                // =====================================================
+            const body = settingsRef.current.notifPreview
+                ? msg.text || (msg.image ? "📷 عکس" : msg.file ? "📎 فایل" : "پیام جدید")
+                : "پیام جدید دریافت شد";
 
-                const body = settings.notifPreview
-                    ? msg.text ||
-                      (msg.image
-                          ? "📷 عکس"
-                          : msg.file
-                              ? "📎 فایل"
-                              : "پیام جدید")
-                    : "پیام جدید دریافت شد";
-
-                // =====================================================
-                // Avatar
-                // =====================================================
-
-                const icon = msg.senderImage
-                    ? msg.senderImage.startsWith("http")
-                        ? msg.senderImage
-                        : `${API_BASE_URL}${msg.senderImage}`
-                    : "/avatar.png";
-
-                console.log("🔔 Notification data:", {
-                    title,
+            try {
+                console.debug("🔔 [notif] creating notification:", title, body);
+                const notif = new Notification(title, {
                     body,
                     icon,
-                    chatType,
+                    silent: !settingsRef.current.notifVibrate,
+                    tag: `chatify-private-${senderId || "msg"}`,
                 });
 
-                // =====================================================
-                // ساخت Notification
-                // =====================================================
+                notif.onclick = () => {
+                    window.focus();
+                    notif.close();
+                };
 
-                try {
-                    const notif = new Notification(title, {
-                        body,
-                        icon,
-                        silent: !settings.notifVibrate,
-                        tag: `chatify-${chatType}-${
-                            msg.chatId || senderId || "msg"
-                        }`,
-                    });
-
-                    console.log(
-                        "🎉 Notification ساخته شد"
-                    );
-
-                    // کلیک روی Notification
-                    notif.onclick = () => {
-                        window.focus();
-                        notif.close();
-                    };
-
-                    // =================================================
-                    // ویبره موبایل
-                    // =================================================
-
-                    if (
-                        settings.notifVibrate &&
-                        navigator.vibrate
-                    ) {
-                        navigator.vibrate(200);
-
-                        console.log(
-                            "📳 Vibration اجرا شد"
-                        );
-                    }
-                } catch (err) {
-                    console.warn(
-                        "❌ Notification error:",
-                        err
-                    );
+                if (settingsRef.current.notifVibrate && navigator.vibrate) {
+                    navigator.vibrate(200);
                 }
-            });
-
-        // Cleanup
-        return unsubscribe;
+            } catch (err) {
+                console.warn("❌ Notification error:", err);
+            }
+        });
     }, []);
 }

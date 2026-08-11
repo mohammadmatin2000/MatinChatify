@@ -16,15 +16,34 @@ import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 import {Search, X} from "lucide-react";
 import CallsList from "../components/CallsList";
 import useTranslation from "../hooks/useTranslation";
+import useDesktopNotifications from "../hooks/useDesktopNotifications";
 
 const PULL_THRESHOLD = 55;
 const MAX_PULL = 90;
 
 function ChatPage() {
-    const {activeTab, selectedUser, selectedGroup, setSelectedGroup} = useChatStore();
+    const {
+        activeTab,
+        selectedUser,
+        selectedGroup,
+        setSelectedGroup,
+        connectOnlineStatusSocket,
+        disconnectOnlineStatusSocket,
+    } = useChatStore();
     const {selectedChannel, setSelectedChannel} = useChannelStore();
     const {callStatus, groupCallStatus, minimizeCall} = useCallStore();
     const {t} = useTranslation();
+    useDesktopNotifications();
+
+    // ✅ FIX: این تابع هیچ‌جا صدا زده نمی‌شد — یعنی سوکت وضعیت آنلاین
+    // (که new_message_notify ازش میاد و نوتیفیکیشن دسکتاپ بهش وابسته‌ست)
+    // اصلاً هیچ‌وقت وصل نمی‌شد. باید یه‌بار موقع mount شدن صفحه‌ی چت وصل بشه،
+    // و موقع خروج از صفحه بسته بشه.
+    useEffect(() => {
+        connectOnlineStatusSocket();
+        return () => disconnectOnlineStatusSocket();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const [searchOpen, setSearchOpen] = useState(false);
     const [pullOffset, setPullOffset] = useState(0);

@@ -7,30 +7,33 @@ import useTranslation from "../hooks/useTranslation";
 
 import { useEffect } from "react";
 
-// ✅ NEW: فرمت «آخرین بازدید» به فارسی، شبیه واتساب
-function formatLastSeen(isoString) {
-  if (!isoString) return null;
-  const date = new Date(isoString);
-  const now = new Date();
-
-  const isToday = date.toDateString() === now.toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday = date.toDateString() === yesterday.toDateString();
-
-  const time = date.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" });
-
-  if (isToday) return `آخرین بازدید امروز ساعت ${time}`;
-  if (isYesterday) return `آخرین بازدید دیروز ساعت ${time}`;
-
-  const dateStr = date.toLocaleDateString("fa-IR", { day: "numeric", month: "long" });
-  return `آخرین بازدید ${dateStr}`;
-}
-
 function ChatHeader() {
   const { selectedUser, setSelectedUser, onlineUsers, blockStatus } = useChatStore();
   const { startCall, callStatus } = useCallStore();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+
+  // ✅ فرمت «آخرین بازدید» — حالا با ترجمه و locale بر اساس زبون فعلی اپ،
+  // نه همیشه فارسی. dateLocaleStr همون الگوییه که توی ProfileHeader هست.
+  const dateLocaleStr = language === "fa" ? "fa-IR" : language === "de" ? "de-DE" : "en-US";
+
+  const formatLastSeen = (isoString) => {
+    if (!isoString) return null;
+    const date = new Date(isoString);
+    const now = new Date();
+
+    const isToday = date.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    const time = date.toLocaleTimeString(dateLocaleStr, { hour: "2-digit", minute: "2-digit" });
+
+    if (isToday) return t("lastSeen.today", { time });
+    if (isYesterday) return t("lastSeen.yesterday", { time });
+
+    const dateStr = date.toLocaleDateString(dateLocaleStr, { day: "numeric", month: "long" });
+    return t("lastSeen.date", { date: dateStr });
+  };
 
   const isOnline = selectedUser
     ? onlineUsers.some((id) => String(id) === String(selectedUser.id || selectedUser._id))
@@ -61,7 +64,7 @@ function ChatHeader() {
   const isBlockedEitherWay = blockStatus.iBlockedThem || blockStatus.theyBlockedMe;
   const canCall = callStatus === "idle" && !isBlockedEitherWay;
 
-  // ✅ NEW: آخرین بازدید از raw.last_seen (که سریالایزر/سوکت مخاطبین برمی‌گردونه)
+  // ✅ آخرین بازدید از raw.last_seen (که سریالایزر/سوکت مخاطبین برمی‌گردونه)
   const lastSeenText = !isOnline
     ? formatLastSeen(selectedUser.raw?.last_seen || selectedUser.last_seen)
     : null;
