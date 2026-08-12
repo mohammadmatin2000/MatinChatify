@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-from .models import UserSettings
+from .models import UserSettings,PushSubscription
 User = get_user_model()
 # ======================================================================================================================
 class UserSettingsSerializer(serializers.ModelSerializer):
@@ -31,6 +31,10 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             "updated_date",
         ]
         read_only_fields = ["updated_date", "last_backup_date"]
+# ======================================================================================================================
+class PushSubscriptionSerializer(serializers.ModelSerializer):
+    endpoint = serializers.URLField()
+    key = serializers.DictField()
 # ======================================================================================================================
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)

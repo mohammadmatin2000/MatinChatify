@@ -1,9 +1,10 @@
-import {useEffect, useState, useRef, useCallback} from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import {useAuthStore} from "../store/useAuthStore";
-import {useChatStore} from "../store/useChatStore";
-import {useChannelStore} from "../store/useChannelStore";
+import { useAuthStore } from "../store/useAuthStore";
+import { useChatStore } from "../store/useChatStore";
+import { useChannelStore } from "../store/useChannelStore";
+import { useSettingsStore } from "../store/useSettingsStore";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import ForwardMessageModal from "./ForwardMessageModal";
@@ -17,6 +18,26 @@ import {
 
 const API_BASE_URL = "http://localhost:8000";
 const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_BASE_URL}${url}`);
+
+// ✅ NEW: نگاشت گزینه‌ی پس‌زمینه‌ی انتخاب‌شده در تنظیمات به کلاس واقعی Tailwind
+const WALLPAPER_CLASSES = {
+    default: "",
+    midnight: "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950",
+    aurora:
+        "bg-slate-950 bg-[radial-gradient(circle_at_15%_15%,rgba(34,211,238,0.16),transparent_45%),radial-gradient(circle_at_85%_5%,rgba(168,85,247,0.14),transparent_45%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.12),transparent_50%)]",
+    sunset: "bg-gradient-to-br from-orange-950/50 via-slate-900 to-rose-950/40",
+    ocean: "bg-gradient-to-br from-cyan-950/60 via-slate-900 to-blue-950/40",
+    forest: "bg-gradient-to-br from-emerald-950/60 via-slate-900 to-teal-950/30",
+    grid: "bg-slate-950 bg-[linear-gradient(rgba(148,163,184,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.07)_1px,transparent_1px)] bg-[length:24px_24px]",
+    dots: "bg-slate-950 bg-[radial-gradient(circle,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[length:18px_18px]",
+    candy: "bg-gradient-to-br from-fuchsia-950/50 via-slate-900 to-indigo-950/50",
+    amber: "bg-gradient-to-br from-amber-950/50 via-slate-900 to-slate-950",
+    starry:
+        "bg-slate-950 bg-[radial-gradient(1.5px_1.5px_at_20px_30px,rgba(255,255,255,0.5),transparent),radial-gradient(1.5px_1.5px_at_90px_60px,rgba(255,255,255,0.4),transparent),radial-gradient(1px_1px_at_150px_20px,rgba(255,255,255,0.35),transparent),radial-gradient(1.5px_1.5px_at_50px_100px,rgba(255,255,255,0.3),transparent)] bg-[length:180px_180px]",
+    diagonal:
+        "bg-slate-950 bg-[repeating-linear-gradient(135deg,rgba(148,163,184,0.06)_0px,rgba(148,163,184,0.06)_1px,transparent_1px,transparent_14px)]",
+    monochrome: "bg-slate-900",
+};
 
 const fileToBase64 = (file) =>
     new Promise((resolve, reject) => {
@@ -33,6 +54,10 @@ function ChannelChatContainer({channel, onBack}) {
     const {searchResults, isSearching, searchUsers, clearSearch} = useChatStore();
     const {members, fetchMembers, isMembersLoading, addMember, updateMemberRole, removeMember} = useChannelStore();
     const {t} = useTranslation();
+
+    // ✅ NEW: پس‌زمینه‌ی چت از تنظیمات
+    const chatWallpaper = useSettingsStore((state) => state.chatWallpaper);
+    const wallpaperClass = WALLPAPER_CLASSES[chatWallpaper] || "";
 
     const [messages, setMessages] = useState([]);
     const [isMessagesLoading, setIsMessagesLoading] = useState(true);
@@ -405,7 +430,8 @@ function ChannelChatContainer({channel, onBack}) {
             </div>
 
             {/* پیام‌ها */}
-            <div className="flex-1 px-6 overflow-y-auto py-8">
+            {/* ✅ NEW: پس‌زمینه‌ی چت از تنظیمات اعمال می‌شه */}
+            <div className={`flex-1 px-6 overflow-y-auto py-8 ${wallpaperClass}`}>
                 {isMessagesLoading ? (
                     <MessagesLoadingSkeleton/>
                 ) : messages.length === 0 ? (

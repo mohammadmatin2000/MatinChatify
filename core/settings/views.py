@@ -7,11 +7,12 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.http import HttpResponse
 from rest_framework.views import APIView
-from .models import UserSettings
+from .models import UserSettings,PushSubscription
 from .serializers import (
     ChangePasswordSerializer,
     DeleteAccountSerializer,
     UserSettingsSerializer,
+    PushSubscriptionSerializer
 )
 from chat.models import MessageModels
 User = get_user_model()
@@ -197,4 +198,32 @@ class BackupChatsView(APIView):
         response = HttpResponse(payload, content_type="application/json; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+# ======================================================================================================================
+class PushSubscribeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PushSubscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        endpoint = serializer.validated_data["endpoint"]
+        keys = serializer.validated_data["keys"]
+
+        PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={
+                "user": request.user,
+                "p256dh": keys.get("p256dh", ""),
+                "auth": keys.get("auth", ""),
+            },
+        )
+        return Response({"detail": "subscribed"}, status=status.HTTP_201_CREATED)
+# ======================================================================================================================
+class PushUnsubscribeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        endpoint = request.data.get("endpoint")
+        if endpoint:
+            PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+        return Response({"detail": "unsubscribed"}, status=status.HTTP_200_OK)
 # ======================================================================================================================

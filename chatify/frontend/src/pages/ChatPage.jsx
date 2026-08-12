@@ -16,6 +16,7 @@ import NoConversationPlaceholder from "../components/NoConversationPlaceholder";
 import {Search, X} from "lucide-react";
 import CallsList from "../components/CallsList";
 import useTranslation from "../hooks/useTranslation";
+import useWebPush from "../hooks/useWebPush";
 import useDesktopNotifications from "../hooks/useDesktopNotifications";
 
 const PULL_THRESHOLD = 55;
@@ -30,6 +31,10 @@ function ChatPage() {
         connectOnlineStatusSocket,
         disconnectOnlineStatusSocket,
     } = useChatStore();
+    const { register: registerWebPush } = useWebPush();
+    useEffect(() => {
+        registerWebPush();
+    }, []);
     const {selectedChannel, setSelectedChannel} = useChannelStore();
     const {callStatus, groupCallStatus, minimizeCall} = useCallStore();
     const {t} = useTranslation();

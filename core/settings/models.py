@@ -1,5 +1,6 @@
 from django.conf import settings as django_settings
 from django.db import models
+from accounts.models import User
 # ======================================================================================================================
 class VisibilityChoices(models.TextChoices):
     EVERYONE = "everyone", "Everyone"
@@ -13,11 +14,18 @@ class FontSizeChoices(models.TextChoices):
 # ======================================================================================================================
 class WallpaperChoices(models.TextChoices):
     DEFAULT = "default", "پیش‌فرض"
-    SLATE = "slate", "سرمه‌ای ساده"
-    CYAN_GRADIENT = "cyan_gradient", "گرادیان فیروزه‌ای"
-    VIOLET_GRADIENT = "violet_gradient", "گرادیان بنفش"
-    EMERALD_GRADIENT = "emerald_gradient", "گرادیان سبز"
+    MIDNIGHT = "midnight", "نیمه‌شب"
+    AURORA = "aurora", "شفق قطبی"
+    SUNSET = "sunset", "غروب"
+    OCEAN = "ocean", "اقیانوس"
+    FOREST = "forest", "جنگل"
+    GRID = "grid", "شبکه‌ای"
     DOTS = "dots", "نقطه‌چین"
+    CANDY = "candy", "بنفش‌آبی"
+    AMBER = "amber", "کهربایی"
+    STARRY = "starry", "پرستاره"
+    DIAGONAL = "diagonal", "خط‌های مورب"
+    MONOCHROME = "monochrome", "سرمه‌ای تک‌رنگ"
 # ======================================================================================================================
 class LanguageChoices(models.TextChoices):
     FA = "fa", "فارسی"
@@ -80,4 +88,14 @@ class UserSettings(models.Model):
 
     def __str__(self):
         return f"Settings<{self.user}>"
+# ======================================================================================================================
+class PushSubscription(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="push_subscriptions")
+    endpoint = models.URLField(max_length=500, unique=True)
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=255)
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user} - {self.endpoint[:40]}..."
 # ======================================================================================================================

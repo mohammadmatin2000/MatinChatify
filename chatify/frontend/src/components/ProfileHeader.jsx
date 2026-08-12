@@ -974,7 +974,7 @@ function ProfileHeader({onNewGroup}) {
         {q: t("faq.q5"), a: t("faq.a5")},
     ];
 
-    const SUPPORT_EMAIL = "matin20001000@gmail.comر"; // ← ایمیلتو اینجا بذار
+    const SUPPORT_EMAIL = "matin20001000@gmail.com"; // ← ایمیلتو اینجا بذار
     const SUPPORT_TELEGRAM = "https://t.me/Matin_8_65"; // ← آیدی تلگرام پشتیبانیت
     const APP_VERSION = "۱.۰.۰";
 
@@ -983,8 +983,8 @@ function ProfileHeader({onNewGroup}) {
 
     return (
         <div className="p-6 border-b border-slate-700/50 relative">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                     <div className="avatar online">
                         <button
                             className="size-14 rounded-full overflow-hidden relative group"
@@ -1042,7 +1042,7 @@ function ProfileHeader({onNewGroup}) {
                             <input
                                 ref={bioInputRef}
                                 type="text"
-                                maxLength={140}
+                                maxLength={30}
                                 value={profile.bio || ""}
                                 onChange={(e) => setProfile({...profile, bio: e.target.value})}
                                 onBlur={() => {
@@ -1061,17 +1061,18 @@ function ProfileHeader({onNewGroup}) {
                         ) : (
                             <button
                                 onClick={() => setIsEditingBio(true)}
-                                className="group/bio mt-1.5 flex items-center gap-1.5 max-w-[180px] px-2.5 py-1 rounded-full
-                                           bg-gradient-to-r from-slate-800/80 to-slate-800/40 border border-slate-700/50
-                                           hover:border-cyan-500/40 hover:from-cyan-500/10 hover:to-slate-800/40
-                                           transition-all duration-200"
+                                title={profile.bio || t("profile.bioButtonPlaceholder")}
+                                className="group/bio mt-1.5 flex items-center gap-1.5 w-full max-w-[180px] px-2.5 py-1 rounded-full
+               bg-gradient-to-r from-slate-800/80 to-slate-800/40 border border-slate-700/50
+               hover:border-cyan-500/40 hover:from-cyan-500/10 hover:to-slate-800/40
+               transition-all duration-200"
                             >
                                 <SparklesIcon
                                     className="w-2.5 h-2.5 text-cyan-400/70 flex-shrink-0 group-hover/bio:text-cyan-400 transition-colors"/>
                                 <span
-                                    className="text-[11px] text-slate-400 group-hover/bio:text-slate-200 truncate transition-colors">
-                                    {profile.bio || t("profile.bioButtonPlaceholder")}
-                                </span>
+                                    className="text-[11px] text-slate-400 group-hover/bio:text-slate-200 truncate min-w-0 flex-1 text-right transition-colors">
+    {profile.bio || t("profile.bioButtonPlaceholder")}
+</span>
                                 <PencilIcon
                                     className="w-2.5 h-2.5 text-slate-600 opacity-0 group-hover/bio:opacity-100 group-hover/bio:text-cyan-400 flex-shrink-0 transition-all"/>
                             </button>
@@ -1079,7 +1080,7 @@ function ProfileHeader({onNewGroup}) {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 relative z-50">
+                <div className="flex items-center gap-4 relative z-50 flex-shrink-0">
                     <button
                         onClick={openSettings}
                         className="text-slate-400 hover:text-cyan-400 transition-colors flex items-center justify-center"
@@ -1130,36 +1131,7 @@ function ProfileHeader({onNewGroup}) {
                         )}
                     </div>
 
-                    {showNewMenu && (
-                        <>
-                            <div className="fixed inset-0 z-40" onClick={() => setShowNewMenu(false)}/>
-                            <div
-                                className="absolute top-full left-1/2 -translate-x-1/3 mt-2 bg-slate-800 rounded-lg shadow-lg w-56 flex flex-col z-50 overflow-hidden border border-slate-700/50">
-                                <button
-                                    onClick={openCreateGroup}
-                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right whitespace-nowrap"
-                                >
-                                    <UsersIcon className="w-4 h-4 text-cyan-400 shrink-0"/>
-                                    {t("menu.createGroup")}
-                                </button>
 
-                                <button
-                                    onClick={openAddContact}
-                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
-                                >
-                                    <UserPlus className="w-4 h-4 text-cyan-400 shrink-0"/>
-                                    {t("menu.createContact")}
-                                </button>
-                                <button
-                                    onClick={openCreateChannel}
-                                    className="flex items-center gap-2 p-3 hover:bg-slate-700 cursor-pointer text-white text-sm text-right border-t border-slate-700/50 whitespace-nowrap"
-                                >
-                                    <Radio className="w-4 h-4 text-violet-400 shrink-0"/>
-                                    {t("menu.createChannel")}
-                                </button>
-                            </div>
-                        </>
-                    )}
                 </div>
             </div>
 

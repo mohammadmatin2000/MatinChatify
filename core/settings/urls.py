@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (ChangePasswordView, DeleteAccountView, UserSettingsView,
-                    StorageUsageSummaryView,StorageItemsListView,DeleteStorageItemView,BackupChatsView)
+                    StorageUsageSummaryView,StorageItemsListView,DeleteStorageItemView,BackupChatsView,
+                    PushSubscribeView,PushUnsubscribeView)
 # ======================================================================================================================
 urlpatterns = [
     path("", UserSettingsView.as_view(), name="user-settings"),
@@ -13,5 +14,8 @@ urlpatterns = [
     path("storage-usage/items/<int:message_id>/", DeleteStorageItemView.as_view(), name="storage-usage-item-delete"),
     # پشتیبان‌گیری از چت‌ها
     path("backup-chats/", BackupChatsView.as_view(), name="backup-chats"),
+
+    path("push/subscribe/", PushSubscribeView.as_view(), name="push-subscribe"),
+    path("push/unsubscribe/", PushUnsubscribeView.as_view(), name="push-unsubscribe"),
 ]
 # ======================================================================================================================

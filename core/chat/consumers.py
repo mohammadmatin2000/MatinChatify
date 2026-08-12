@@ -8,6 +8,7 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 from chat.models import MessageModels, ContactModels, BlockModels
 from accounts.models import User
+from settings.push_utils import send_web_push
 
 # ======================================================================================================================
 online_users_list = set()
@@ -198,6 +199,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 f"user_{uid}",
                 {"type": "new_message_notify", "message": message_data}
             )
+
+        # ✅ NEW: Web Push واقعی به گیرنده — حتی اگه مرورگر/تب بسته باشه هم می‌رسه
+        await self.send_push_to_receiver(sender_id, receiver_id, text, message_type)
 
     async def chat_message_broadcast(self, event):
         await self.send(text_data=json.dumps({
@@ -431,6 +435,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         updated_ids = list(qs.values_list("id", flat=True))
         qs.update(is_read=True, read_at=now())
         return updated_ids, sender_ids
+
+    # ✅ NEW: ارسال Web Push به گیرنده‌ی پیام
+    @database_sync_to_async
+    def send_push_to_receiver(self, sender_id, receiver_id, text, message_type):
+        sender = User.objects.filter(id=sender_id).first()
+        receiver = User.objects.filter(id=receiver_id).first()
+        if not sender or not receiver:
+            return
+        sender_name = getattr(sender, "email", None) or getattr(sender, "phone_number", None) or "کاربر"
+        body = text if text else ("📷 عکس" if message_type == "image" else "پیام جدید")
+        send_web_push(receiver, title=sender_name, body=body, url="/")
 # ======================================================================================================================
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
     online_users = {}
@@ -470,8 +485,6 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             # ✅ NEW: ذخیره‌ی آخرین بازدید
             await self.update_last_seen()
             await self.broadcast_presence(False)
-
-    # ... بقیه‌ی متدها بدون تغییر ...
 
     @database_sync_to_async
     def update_last_seen(self):
