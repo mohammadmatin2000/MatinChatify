@@ -178,3 +178,12 @@ KAVENEGAR_VERIFY_TEMPLATE = "verify"  # اسم دقیق الگویی که توی
 VAPID_PUBLIC_KEY = "BOUMUrLB-jCynv5GyBWGwFa5BK8pzotKc7-KUWv2F3O_t5AsVKh6QQtVHjKsA4rrQ-rwYt3QEwByZ4hpIN38FGQ"
 VAPID_PRIVATE_KEY = "a1ioTlwvvX--dREE4-TjIKAD6KA1biJzkdzbz7hTTpE"
 VAPID_ADMIN_EMAIL = "matin20001313@gmail.com"
+
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = "mohammadmatin13872008@gmail.com"
+EMAIL_HOST_PASSWORD = "yuzs vfwr zfbq ngho"
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

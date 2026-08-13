@@ -179,7 +179,7 @@ export const useChatStore = create((set, get) => ({
         set((state) => {
             const next = !state.isSoundEnabled;
             localStorage.setItem("isSoundEnabled", JSON.stringify(next));
-            return { isSoundEnabled: next };
+            return {isSoundEnabled: next};
         });
     },
 
@@ -337,6 +337,40 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
+    chatList: [],
+    isChatListLoading: false,
+
+    // ✅ NEW: لیست واقعی مکالمات (نه فقط مخاطبین رسمی)
+    getChatList: async () => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) return;
+        set({isChatListLoading: true});
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/conversations/`, {
+                headers: {Authorization: `Bearer ${token}`},
+            });
+            const data = await res.json();
+            set({
+                chatList: (Array.isArray(data) ? data : []).map((c) => ({
+                    _id: c.id,
+                    id: c.id,
+                    email: c.email || null,
+                    phoneNumber: c.phone_number || null,
+                    name: c.name,
+                    profile: c.profile || null,
+                    is_contact: c.is_contact,
+                    raw: {id: c.contact_record_id, profile: c.profile},
+                    last_message: c.last_message,
+                })),
+            });
+        } catch {
+            toast.error("خطا در دریافت مکالمات");
+        } finally {
+            set({isChatListLoading: false});
+        }
+    },
+
+
     // ---------------- 🔍 Search (فعلاً بلااستفاده، برای آینده نگه داشته شده) ----------------
     searchUsers: async (query) => {
         const token = localStorage.getItem("accessToken");
@@ -414,6 +448,7 @@ export const useChatStore = create((set, get) => ({
 
             set((state) => ({
                 allContacts: state.allContacts.filter((c) => c.raw?.id !== contactRecordId),
+                chatList: state.chatList.filter((c) => c.raw?.id !== contactRecordId),
             }));
             toast.success("مخاطب حذف شد");
             return true;

@@ -8,7 +8,8 @@ from .views import (
     CustomTokenObtainPairView,
     UserProfileUpdateView,
     RequestPhoneOTPView,
-    VerifyPhoneOTPView
+    VerifyPhoneOTPView,
+    Verify2FAView
 )
 
 # ======================================================================================================================
@@ -34,6 +35,8 @@ urlpatterns = [
     path("otp/request/", RequestPhoneOTPView.as_view(), name="otp-request"),
     path("otp/verify/", VerifyPhoneOTPView.as_view(), name="otp-verify"),
 
+
+    path("verify-2fa/", Verify2FAView.as_view(), name="verify-2fa"),
 
 ]
 # ======================================================================================================================

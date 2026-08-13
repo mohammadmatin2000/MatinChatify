@@ -12,6 +12,7 @@ import {Toaster} from "react-hot-toast";
 import CallModal from "./components/CallModal";
 import GroupCallModal from "./components/GroupCallModal";
 import useClickSound from "./hooks/useClickSound";
+import useCallNotifications from "./hooks/useCallNotifications";
 
 function App() {
     const {checkAuth, isCheckingAuth, authUser} = useAuthStore();
@@ -20,6 +21,7 @@ function App() {
     const backgroundPatternEnabled = useSettingsStore((state) => state.backgroundPatternEnabled);
 
     useClickSound();
+    useCallNotifications()
 
     useEffect(() => {
         checkAuth();

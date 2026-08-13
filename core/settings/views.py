@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.http import HttpResponse
 from rest_framework.views import APIView
 from .models import UserSettings,PushSubscription
+from chat.models import BlockModels
 from .serializers import (
     ChangePasswordSerializer,
     DeleteAccountSerializer,

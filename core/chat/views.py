@@ -46,6 +46,76 @@ class ContactViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 # ======================================================================================================================
+class ConversationsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        sent_to_ids = MessageModels.objects.filter(sender=user).values_list("receiver_id", flat=True)
+        received_from_ids = MessageModels.objects.filter(receiver=user).values_list("sender_id", flat=True)
+        partner_ids = set(sent_to_ids) | set(received_from_ids)
+
+        if not partner_ids:
+            return Response([])
+
+        contacts_map = {
+            c.contact_id: c
+            for c in ContactModels.objects.filter(
+                user=user, contact_id__in=partner_ids
+            ).select_related("contact", "contact__user_profile")
+        }
+
+        partners = User.objects.filter(id__in=partner_ids).select_related("user_profile")
+        partners_map = {p.id: p for p in partners}
+
+        results = []
+        for pid in partner_ids:
+            partner = partners_map.get(pid)
+            if not partner:
+                continue
+
+            last_msg = (
+                MessageModels.objects.filter(
+                    Q(sender=user, receiver_id=pid) | Q(sender_id=pid, receiver=user)
+                )
+                .order_by("-created_date")
+                .first()
+            )
+            if not last_msg:
+                continue
+
+            contact = contacts_map.get(pid)
+            profile = getattr(partner, "user_profile", None)
+
+            if contact and contact.display_name:
+                name = contact.display_name
+            elif profile and (profile.first_name or profile.last_name):
+                name = profile.get_fullname()
+            else:
+                name = partner.email or partner.phone_number
+
+            image = None
+            if profile and profile.image:
+                image = request.build_absolute_uri(profile.image.url)
+
+            results.append({
+                "id": partner.id,
+                "name": name,
+                "email": partner.email,
+                "phone_number": partner.phone_number,
+                "profile": image,
+                "is_contact": contact is not None,
+                "contact_record_id": contact.id if contact else None,
+                "last_message": MessageSerializer(last_msg, context={"request": request}).data,
+            })
+
+        results.sort(
+            key=lambda r: r["last_message"]["created_date"],
+            reverse=True,
+        )
+        return Response(results)
+# ======================================================================================================================
 class SearchUsersView(APIView):
     """چک کردن اینکه یه شماره/ایمیل توی چتیفای هست یا نه، قبل از سیو به‌عنوان مخاطب"""
     permission_classes = [IsAuthenticated]

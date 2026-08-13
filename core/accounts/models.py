@@ -116,3 +116,21 @@ class PhoneOTP(models.Model):
     def is_valid(self):
         return not self.is_used and not self.is_expired() and self.attempts < 5
 # ======================================================================================================================
+class TwoFactorCode(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="two_factor_codes")
+    code = models.CharField(max_length=6)
+    created_date = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    @staticmethod
+    def generate_code():
+        return f"{random.randint(0, 999999):06d}"
+
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+
+    def is_valid(self):
+        return not self.is_used and not self.is_expired() and self.attempts < 5
+# ======================================================================================================================

@@ -1,14 +1,13 @@
 import { useEffect, useState, useRef } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { useChannelStore } from "../store/useChannelStore"; // ✅ FIX: برای پاک کردن selectedChannel
+import { useChannelStore } from "../store/useChannelStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import NoChatsFound from "./NoChatsFound";
 import useTranslation from "../hooks/useTranslation";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
 import { faIR, enUS, de } from "date-fns/locale";
 import { ImageIcon, Trash2, Paperclip, MapPin, User as UserIcon, Phone } from "lucide-react";
-import axios from "axios";
 
 const DATE_LOCALES = { fa: faIR, en: enUS, de };
 
@@ -20,8 +19,6 @@ function formatLastMessageTime(date, locale) {
   return formatDistanceToNowStrict(date, { addSuffix: true, locale });
 }
 
-// شکل واقعی پیام توی useChatStore: { text, image, file, fileName, messageType, meta, createdAt }
-// این تابع فقط camelCase/snake_case رو یکی می‌کنه، فیلد اختراعی اضافه نمی‌کنه
 function normalizeMessage(raw) {
   if (!raw) return null;
   return {
@@ -42,7 +39,6 @@ function normalizeMessage(raw) {
   };
 }
 
-// برچسب و آیکون preview رو بر اساس messageType تعیین می‌کنه.
 function getPreview(msg, t) {
   if (!msg) return { text: t("chatsList.noMessagesYet"), Icon: null, isPlaceholder: true };
   if (msg.deleted) return { text: t("chatsList.deleted"), Icon: null, isPlaceholder: false };
@@ -69,9 +65,9 @@ function getPreview(msg, t) {
 
 function ChatsList({ searchQuery = "" }) {
   const {
-    getAllContacts,
-    allContacts,
-    isUsersLoading,
+    getChatList,
+    chatList,
+    isChatListLoading,
     setSelectedUser,
     setSelectedGroup,
     onlineUsers,
@@ -88,47 +84,25 @@ function ChatsList({ searchQuery = "" }) {
   const confirmTimerRef = useRef(null);
 
   useEffect(() => {
-    getAllContacts();
-  }, [getAllContacts]);
+    getChatList();
+  }, [getChatList]);
+
+  // مقداردهی اولیه‌ی lastMessages از خود لیست مکالمات (که last_message رو داره)
+  useEffect(() => {
+    if (!chatList || chatList.length === 0) return;
+    const initial = {};
+    chatList.forEach((c) => {
+      const normalized = normalizeMessage(c.last_message);
+      if (normalized) initial[c.id] = normalized;
+    });
+    setLastMessages((prev) => ({ ...initial, ...prev }));
+  }, [chatList]);
 
   useEffect(() => {
     return () => {
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
     };
   }, []);
-
-  const fetchLastMessage = async (contactId) => {
-    try {
-      const token = localStorage.getItem("accessToken");
-      const res = await axios.get(`http://localhost:8000/chat/messages/${contactId}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
-      if (list.length === 0) return;
-
-      const sorted = [...list].sort((a, b) => {
-        const da = new Date(a.createdAt ?? a.created_at ?? a.created_date ?? 0).getTime();
-        const db = new Date(b.createdAt ?? b.created_at ?? b.created_date ?? 0).getTime();
-        return db - da;
-      });
-
-      const normalized = normalizeMessage(sorted[0]);
-      if (normalized) {
-        setLastMessages((prev) => ({ ...prev, [contactId]: normalized }));
-      }
-    } catch (err) {
-      console.error("Error fetching last message for", contactId, err);
-    }
-  };
-
-  useEffect(() => {
-    if (!allContacts || allContacts.length === 0) return;
-    allContacts.forEach((contact) => {
-      const contactId = contact?.id || contact?._id;
-      if (!contactId) return;
-      fetchLastMessage(contactId);
-    });
-  }, [allContacts]);
 
   useEffect(() => {
     if (!authUser?.id) return;
@@ -147,6 +121,12 @@ function ChatsList({ searchQuery = "" }) {
             ...prev,
             [contactId]: msg,
           }));
+
+          // ✅ اگه این یه مکالمه‌ی کاملاً جدیده (طرف قبلاً توی لیست نبود)، لیست رو رفرش کن
+          const alreadyInList = chatList.some((c) => String(c.id) === contactId);
+          if (!alreadyInList) {
+            getChatList();
+          }
           break;
         }
 
@@ -188,7 +168,7 @@ function ChatsList({ searchQuery = "" }) {
     });
 
     return unsubscribe;
-  }, [authUser?.id, addMessageEventListener]);
+  }, [authUser?.id, addMessageEventListener, chatList, getChatList]);
 
   const handleSelectUser = (contact) => {
     setSelectedGroup(null);
@@ -198,6 +178,7 @@ function ChatsList({ searchQuery = "" }) {
 
   const handleDeleteClick = (e, contactRecordId) => {
     e.stopPropagation();
+    if (!contactRecordId) return;
 
     if (confirmDeleteId === contactRecordId) {
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
@@ -213,19 +194,19 @@ function ChatsList({ searchQuery = "" }) {
     }, 3000);
   };
 
-  if (isUsersLoading) return <UsersLoadingSkeleton />;
-  if (!allContacts || allContacts.length === 0) return <NoChatsFound />;
+  if (isChatListLoading) return <UsersLoadingSkeleton />;
+  if (!chatList || chatList.length === 0) return <NoChatsFound />;
 
   const q = searchQuery.trim().toLowerCase();
-  const filteredContacts = q
-    ? allContacts.filter((contact) => {
+  const filteredList = q
+    ? chatList.filter((contact) => {
         const name = (contact.name || "").toLowerCase();
         const email = (contact.email || "").toLowerCase();
         return name.includes(q) || email.includes(q);
       })
-    : allContacts;
+    : chatList;
 
-  if (filteredContacts.length === 0) {
+  if (filteredList.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
         <p className="text-slate-400 text-sm">{t("common.noResults")}</p>
@@ -233,11 +214,17 @@ function ChatsList({ searchQuery = "" }) {
     );
   }
 
+  // ✅ مرتب‌سازی بر اساس آخرین پیام (جدیدترین بالا)
+  const sortedList = [...filteredList].sort((a, b) => {
+    const da = lastMessages[a.id]?.createdAt ? new Date(lastMessages[a.id].createdAt).getTime() : 0;
+    const db = lastMessages[b.id]?.createdAt ? new Date(lastMessages[b.id].createdAt).getTime() : 0;
+    return db - da;
+  });
+
   return (
     <div className="flex flex-col gap-2 px-1.5 py-1">
-      {filteredContacts.map((contact, idx) => {
-        const contactId = contact?.id || contact?._id;
-        if (!contactId) return null;
+      {sortedList.map((contact, idx) => {
+        const contactId = contact.id;
 
         const contactRecordId = contact.raw?.id;
         const isConfirming = confirmDeleteId === contactRecordId;
@@ -249,19 +236,12 @@ function ChatsList({ searchQuery = "" }) {
         const timeLabel = formatLastMessageTime(lastMessageDate, dateLocale);
         const isOnline = onlineUsers.some((id) => String(id) === String(contactId));
 
-        const displayName =
-          contact.name?.trim() ||
-          (contact.first_name || contact.last_name
-            ? `${contact.first_name || ""} ${contact.last_name || ""}`.trim()
-            : contact.email?.split("@")[0]) ||
-          t("common.unknownUser");
+        const displayName = contact.name?.trim() || t("common.unknownUser");
 
         const profilePicUrl = contact.profile?.startsWith("http")
           ? contact.profile
-          : contact.raw?.profile?.startsWith("http")
-          ? contact.raw.profile
-          : contact.raw?.profile
-          ? `http://localhost:8000${contact.raw.profile}`
+          : contact.profile
+          ? `http://localhost:8000${contact.profile}`
           : "/avatar.png";
 
         return (
@@ -304,7 +284,14 @@ function ChatsList({ searchQuery = "" }) {
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <h4 className="text-slate-100 font-semibold text-[15px] truncate">{displayName}</h4>
+                <h4 className="text-slate-100 font-semibold text-[15px] truncate flex items-center gap-1.5">
+                  {displayName}
+                  {!contact.is_contact && (
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      · {t("chatsList.notInContacts") || "غریبه"}
+                    </span>
+                  )}
+                </h4>
                 {timeLabel && !isConfirming && (
                   <span className="text-[11px] text-slate-500 flex-shrink-0 whitespace-nowrap group-hover:opacity-0 transition-opacity">
                     {timeLabel}

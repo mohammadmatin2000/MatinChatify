@@ -728,7 +728,7 @@ function ProfileHeader({onNewGroup}) {
         setSettingsView("blocked");
         setBlockedLoading(true);
         try {
-            const res = await axios.get(`${API_BASE_URL}/settings/blocked/`, {headers: authHeaders});
+            const res = await axios.get(`${API_BASE_URL}/chat/blocks/`, {headers: authHeaders});
             setBlockedContacts(res.data || []);
         } catch (err) {
             console.error("خطا در دریافت لیست مسدودها:", err.response?.data || err);
@@ -737,11 +737,11 @@ function ProfileHeader({onNewGroup}) {
         }
     };
 
-    const handleUnblock = async (contactId) => {
-        setUnblockingId(contactId);
+    const handleUnblock = async (userId) => {
+        setUnblockingId(userId);
         try {
-            await axios.post(`${API_BASE_URL}/settings/unblock/${contactId}/`, {}, {headers: authHeaders});
-            setBlockedContacts((prev) => prev.filter((c) => c.id !== contactId));
+            await axios.delete(`${API_BASE_URL}/chat/blocks/unblock/${userId}/`, {headers: authHeaders});
+            setBlockedContacts((prev) => prev.filter((c) => c.blocked_user !== userId));
         } catch (err) {
             console.error("خطا در رفع مسدودیت:", err.response?.data || err);
         } finally {
@@ -1467,7 +1467,7 @@ function ProfileHeader({onNewGroup}) {
                                                         {profile.first_name || t("common.unknownUser")}
                                                     </p>
                                                     <p className="text-slate-500 text-xs mt-0.5 truncate">
-                                                        {aboutText || t("account.about")}
+                                                        {profile.bio || t("account.about")}
                                                     </p>
                                                 </div>
                                                 <ChevronLeft className="w-4 h-4 text-slate-500 flex-shrink-0"/>
@@ -1589,9 +1589,11 @@ function ProfileHeader({onNewGroup}) {
                                                     <Info className="w-4 h-4 text-slate-400 flex-shrink-0"/>
                                                     <input
                                                         type="text"
-                                                        value={aboutText}
-                                                        onChange={(e) => setAboutText(e.target.value)}
-                                                        onBlur={handleAboutTextBlur}
+                                                        maxLength={140}
+                                                        value={profile.bio || ""}
+                                                        onChange={(e) => setProfile({...profile, bio: e.target.value})}
+                                                        onBlur={handleBioChange}
+                                                        placeholder={t("profile.bioPlaceholder")}
                                                         className="bg-transparent outline-none text-sm text-slate-200 w-full mr-2"
                                                     />
                                                 </div>
@@ -1798,11 +1800,11 @@ function ProfileHeader({onNewGroup}) {
                                                             <p className="text-slate-500 text-xs truncate">{c.email}</p>
                                                         </div>
                                                         <button
-                                                            onClick={() => handleUnblock(c.id)}
-                                                            disabled={unblockingId === c.id}
+                                                            onClick={() => handleUnblock(c.blocked_user)}
+                                                            disabled={unblockingId === c.blocked_user}
                                                             className="text-xs px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 flex-shrink-0 transition-colors"
                                                         >
-                                                            {unblockingId === c.id ? "..." : t("block.unblock")}
+                                                            {unblockingId === c.blocked_user ? "..." : t("block.unblock")}
                                                         </button>
                                                     </div>
                                                 ))}

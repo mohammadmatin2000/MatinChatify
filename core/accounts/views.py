@@ -1,7 +1,6 @@
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
-from django.core.mail import send_mail
 from django.urls import reverse
 from django.contrib.sites.shortcuts import get_current_site
 from django.contrib.auth import get_user_model
@@ -13,13 +12,17 @@ from django.utils.http import urlsafe_base64_decode
 from rest_framework.views import APIView
 from django.contrib.auth.hashers import make_password
 from rest_framework.permissions import IsAuthenticated,AllowAny
-from django.utils import timezone
-from datetime import timedelta
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.parsers import MultiPartParser,FormParser
 from .models import PhoneOTP
 from .sms import send_otp_sms
+from datetime import timedelta
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings as django_settings
+from .models import TwoFactorCode
+from settings.models import UserSettings
 from .serializers import (
     RegisterSerializer,
     EmailSerializer,
@@ -169,6 +172,85 @@ class LogoutView(APIView):
 # ======================================================================================================================
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.user
+
+        user_settings, _ = UserSettings.objects.get_or_create(user=user)
+
+        if user_settings.two_step_enabled:
+            if not user.email:
+                # کاربری که فقط با شماره ثبت‌نام کرده و ایمیل نداره، فعلاً
+                # نمی‌تونیم کد بفرستیم؛ رد می‌شیم و مستقیم لاگینش می‌کنیم
+                return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+            code = TwoFactorCode.generate_code()
+            TwoFactorCode.objects.create(
+                user=user,
+                code=code,
+                expires_at=timezone.now() + timedelta(minutes=5),
+            )
+            try:
+                send_mail(
+                    subject="کد تایید دو مرحله‌ای چتیفای",
+                    message=f"کد ورود شما: {code}\nاین کد تا ۵ دقیقه معتبره.",
+                    from_email=django_settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                )
+            except Exception as e:
+                print("خطا در ارسال ایمیل کد دومرحله‌ای:", e)
+
+            return Response(
+                {"two_step_required": True, "user_id": user.id},
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+# ======================================================================================================================
+class Verify2FAView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        user_id = request.data.get("user_id")
+        code = request.data.get("code")
+
+        if not user_id or not code:
+            return Response({"detail": "اطلاعات ناقص است."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "کاربر پیدا نشد."}, status=status.HTTP_400_BAD_REQUEST)
+
+        record = (
+            TwoFactorCode.objects.filter(user=user, is_used=False)
+            .order_by("-created_date")
+            .first()
+        )
+        if not record:
+            return Response({"detail": "کدی برای این کاربر ارسال نشده."}, status=status.HTTP_400_BAD_REQUEST)
+        if not record.is_valid():
+            return Response({"detail": "کد منقضی شده یا تعداد تلاش‌ها زیاد بوده."}, status=status.HTTP_400_BAD_REQUEST)
+        if record.code != code:
+            record.attempts += 1
+            record.save(update_fields=["attempts"])
+            return Response({"detail": "کد وارد شده اشتباه است."}, status=status.HTTP_400_BAD_REQUEST)
+
+        record.is_used = True
+        record.save(update_fields=["is_used"])
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "id": user.id,
+                "email": user.email,
+            },
+            status=status.HTTP_200_OK,
+        )
 # ======================================================================================================================
 class UserProfileUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileUpdateSerializer
