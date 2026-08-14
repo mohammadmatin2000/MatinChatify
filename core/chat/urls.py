@@ -2,7 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import (
     ContactViewSet, ChatViewSet, MessageViewSet, SearchUsersView,
-    BlockViewSet, UnblockByUserView, BlockStatusView, ReportUserView,ConversationsView,
+    BlockViewSet, UnblockByUserView, BlockStatusView, ReportUserView,ConversationsView,DeleteConversationView,
 )
 # ======================================================================================================================
 router = DefaultRouter()
@@ -17,5 +17,6 @@ urlpatterns = router.urls + [
     path('blocks/status/<int:user_id>/', BlockStatusView.as_view(), name='block-status'),
     path('report/', ReportUserView.as_view(), name='report-user'),
     path("conversations/", ConversationsView.as_view(), name="conversations"),
+    path("conversations/<int:partner_id>/", DeleteConversationView.as_view(), name="delete-conversation"),
 ]
 # ======================================================================================================================

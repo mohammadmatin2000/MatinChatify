@@ -157,3 +157,23 @@ class ReportModels(models.Model):
     def __str__(self):
         return f"Report: {self.reporter} -> {self.reported_user} ({self.reason})"
 # ======================================================================================================================
+class HiddenConversation(models.Model):
+    # کاربری که چت رو پاک/مخفی کرده
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="hidden_conversations"
+    )
+
+    # طرف مقابلِ مکالمه‌ای که مخفی شده
+    partner = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="+"
+    )
+
+    # هر بار که «پاک کردن چت» زده بشه، این زمان آپدیت می‌شه
+    hidden_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "partner")
+
+    def __str__(self):
+        return f"{self.user} hid chat with {self.partner}"
+# ======================================================================================================================

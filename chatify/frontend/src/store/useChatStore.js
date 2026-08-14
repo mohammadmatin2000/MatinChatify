@@ -448,12 +448,38 @@ export const useChatStore = create((set, get) => ({
 
             set((state) => ({
                 allContacts: state.allContacts.filter((c) => c.raw?.id !== contactRecordId),
-                chatList: state.chatList.filter((c) => c.raw?.id !== contactRecordId),
             }));
             toast.success("مخاطب حذف شد");
             return true;
         } catch {
             toast.error("خطا در حذف مخاطب");
+            return false;
+        }
+    },
+
+    // ✅ NEW: پاک کردن یه چت از لیست (فقط برای کاربر جاری) — مخاطب و پیام‌ها دست‌نخورده می‌مونن.
+    // اگه بعداً پیام جدیدی رد و بدل بشه، این چت خودش دوباره تو لیست ظاهر می‌شه.
+    deleteConversation: async (partnerId) => {
+        const token = localStorage.getItem("accessToken");
+        if (!token) return toast.error("No access token found");
+        try {
+            const res = await fetch(`${API_BASE_URL}/chat/conversations/${partnerId}/`, {
+                method: "DELETE",
+                headers: {Authorization: `Bearer ${token}`},
+            });
+
+            if (!res.ok) {
+                toast.error("خطا در پاک کردن چت");
+                return false;
+            }
+
+            set((state) => ({
+                chatList: state.chatList.filter((c) => String(c.id) !== String(partnerId)),
+            }));
+            toast.success("چت پاک شد");
+            return true;
+        } catch {
+            toast.error("خطا در پاک کردن چت");
             return false;
         }
     },
@@ -489,7 +515,10 @@ export const useChatStore = create((set, get) => ({
                 createdAt: safeDate(msg.created_date || msg.createdAt),
                 isOptimistic: false,
             }));
-            set({messages: messagesWithDate});
+            const sortedMessages = [...messagesWithDate].sort(
+                (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+            );
+            set({messages: sortedMessages});
         } catch {
             toast.error("Failed to fetch messages");
         } finally {

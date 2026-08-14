@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 from rest_framework import generics
 from django.shortcuts import get_object_or_404
-from .models import ContactModels, ChatModels, MessageModels,BlockModels,ReportModels
-from .serializers import ContactSerializer, AddContactSerializer, ChatSerializer, MessageSerializer,ReportSerializer,BlockSerializer
+from .models import ContactModels, ChatModels, MessageModels,BlockModels,HiddenConversation
+from .serializers import (ContactSerializer, AddContactSerializer, ChatSerializer,
+                          MessageSerializer,ReportSerializer,BlockSerializer)
 from accounts.models import User
 from django.db.models import Q
 from rest_framework.views import APIView
@@ -59,6 +60,12 @@ class ConversationsView(APIView):
         if not partner_ids:
             return Response([])
 
+        # ✅ NEW: نگاشت partner_id -> زمانی که کاربر این چت رو پاک/مخفی کرده
+        hidden_map = {
+            h.partner_id: h.hidden_at
+            for h in HiddenConversation.objects.filter(user=user, partner_id__in=partner_ids)
+        }
+
         contacts_map = {
             c.contact_id: c
             for c in ContactModels.objects.filter(
@@ -83,6 +90,11 @@ class ConversationsView(APIView):
                 .first()
             )
             if not last_msg:
+                continue
+
+            # ✅ NEW: اگه این چت مخفی شده و بعد از مخفی‌شدن پیام جدیدی رد و بدل نشده، نشونش نده
+            hidden_at = hidden_map.get(pid)
+            if hidden_at is not None and last_msg.created_date <= hidden_at:
                 continue
 
             contact = contacts_map.get(pid)
@@ -115,6 +127,18 @@ class ConversationsView(APIView):
             reverse=True,
         )
         return Response(results)
+# ======================================================================================================================
+class DeleteConversationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, partner_id):
+        obj, created = HiddenConversation.objects.get_or_create(
+            user=request.user, partner_id=partner_id
+        )
+        if not created:
+            obj.save()  # hidden_at با auto_now آپدیت می‌شه
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 # ======================================================================================================================
 class SearchUsersView(APIView):
     """چک کردن اینکه یه شماره/ایمیل توی چتیفای هست یا نه، قبل از سیو به‌عنوان مخاطب"""

@@ -72,7 +72,9 @@ function ChatsList({ searchQuery = "" }) {
     setSelectedGroup,
     onlineUsers,
     addMessageEventListener,
-    deleteContact,
+    // ✅ CHANGED: قبلاً اینجا deleteContact بود — الان deleteConversation
+    // (پاک کردن خودِ چت از لیست، بدون اینکه مخاطب حذف بشه)
+    deleteConversation,
   } = useChatStore();
   const { authUser } = useAuthStore();
   const { setSelectedChannel } = useChannelStore();
@@ -176,21 +178,23 @@ function ChatsList({ searchQuery = "" }) {
     setSelectedUser(contact);
   };
 
-  const handleDeleteClick = (e, contactRecordId) => {
+  // ✅ CHANGED: contactId (طرف مقابل مکالمه) رو می‌گیره، نه contactRecordId
+  // (چون deleteConversation بر اساس شناسه‌ی کاربر طرف مقابل عمل می‌کنه، نه رکورد Contact)
+  const handleDeleteClick = (e, contactId) => {
     e.stopPropagation();
-    if (!contactRecordId) return;
+    if (!contactId) return;
 
-    if (confirmDeleteId === contactRecordId) {
+    if (confirmDeleteId === contactId) {
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-      deleteContact(contactRecordId);
+      deleteConversation(contactId);
       setConfirmDeleteId(null);
       return;
     }
 
-    setConfirmDeleteId(contactRecordId);
+    setConfirmDeleteId(contactId);
     if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
     confirmTimerRef.current = setTimeout(() => {
-      setConfirmDeleteId((current) => (current === contactRecordId ? null : current));
+      setConfirmDeleteId((current) => (current === contactId ? null : current));
     }, 3000);
   };
 
@@ -226,8 +230,8 @@ function ChatsList({ searchQuery = "" }) {
       {sortedList.map((contact, idx) => {
         const contactId = contact.id;
 
-        const contactRecordId = contact.raw?.id;
-        const isConfirming = confirmDeleteId === contactRecordId;
+        // ✅ CHANGED: تایید حذف الان بر اساس contactId چک می‌شه (نه contactRecordId)
+        const isConfirming = confirmDeleteId === contactId;
 
         const lastMessageObj = lastMessages[contactId];
         const { text: previewText, Icon: PreviewIcon, isPlaceholder } = getPreview(lastMessageObj, t);
@@ -317,23 +321,24 @@ function ChatsList({ searchQuery = "" }) {
               </div>
             </div>
 
-            {contactRecordId && (
-              <button
-                onClick={(e) => handleDeleteClick(e, contactRecordId)}
-                className={`absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full transition-all duration-200 ${
-                  isConfirming
-                    ? "bg-red-500 text-white w-16 h-8 opacity-100 shadow-lg shadow-red-500/30"
-                    : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
-                }`}
-                title={isConfirming ? t("contactList.deleteConfirm") : t("chatsList.deleteChatTitle")}
-              >
-                {isConfirming ? (
-                  <span className="text-xs font-medium">{t("common.confirm")}</span>
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-              </button>
-            )}
+            {/* ✅ CHANGED: contactId رو می‌فرسته (نه contactRecordId) و همیشه نشون داده می‌شه
+                (قبلاً فقط وقتی contactRecordId وجود داشت نشون داده می‌شد، یعنی فقط برای
+                مخاطبین رسمی — ولی پاک کردن چت باید برای هر مکالمه‌ای کار کنه) */}
+            <button
+              onClick={(e) => handleDeleteClick(e, contactId)}
+              className={`absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full transition-all duration-200 ${
+                isConfirming
+                  ? "bg-red-500 text-white w-16 h-8 opacity-100 shadow-lg shadow-red-500/30"
+                  : "opacity-0 group-hover:opacity-100 w-8 h-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+              }`}
+              title={isConfirming ? t("contactList.deleteConfirm") : t("chatsList.deleteChatTitle")}
+            >
+              {isConfirming ? (
+                <span className="text-xs font-medium">{t("common.confirm")}</span>
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+            </button>
           </div>
         );
       })}

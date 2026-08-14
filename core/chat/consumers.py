@@ -482,30 +482,13 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
 
         if self.online_users[self.user_id] <= 0:
             del self.online_users[self.user_id]
-            # ✅ NEW: ذخیره‌ی آخرین بازدید
+            # ذخیره‌ی آخرین بازدید
             await self.update_last_seen()
             await self.broadcast_presence(False)
 
     @database_sync_to_async
     def update_last_seen(self):
         User.objects.filter(id=self.user_id).update(last_seen=now())
-
-    @database_sync_to_async
-    def get_contacts(self):
-        contacts = ContactModels.objects.filter(user=self.user).select_related("contact", "contact__user_profile")
-        result = []
-        for item in contacts:
-            profile = item.contact.user_profile
-            result.append({
-                "id": item.contact.id,
-                "email": item.contact.email,
-                "name": profile.get_fullname(),
-                "image": profile.image.url if profile.image else None,
-                "online": item.contact.id in self.online_users,
-                # ✅ NEW: آخرین بازدید (فقط وقتی آفلاینه معنا داره)
-                "last_seen": item.contact.last_seen.isoformat() if item.contact.last_seen else None,
-            })
-        return result
 
     async def receive(self, text_data):
         try:
@@ -540,7 +523,7 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             "messageId": event["messageId"],
         }))
 
-    # ✅ NEW: اطلاع به فرستنده که پیامش خونده شد (برای تیک آبی)
+    # اطلاع به فرستنده که پیامش خونده شد (برای تیک آبی)
     async def read_receipt_notify(self, event):
         await self.send(text_data=json.dumps({
             "type": "read_receipt",
@@ -548,23 +531,68 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             "readerId": event["readerId"],
         }))
 
-    # -------------------- DB helpers --------------------
+    # ======================================================================
+    # DB helpers
+    # ======================================================================
+
+    # ✅ FIX: قبلاً این متد دو بار توی همین کلاس تعریف شده بود — نسخه‌ی
+    # اولش (که last_seen رو داشت) هیچ‌وقت واقعاً اجرا نمی‌شد، چون توی
+    # پایتون تعریف دوم متد اولی رو کامل بی‌اثر می‌کنه. این‌جا فقط یه‌بار
+    # تعریف شده و هم last_seen رو برمی‌گردونه، هم is_blocked رو، و هم
+    # هر دو تنظیم حریم خصوصی (online_status_visible و last_seen_visibility)
+    # طرفِ مقابل رو واقعاً رعایت می‌کنه.
     @database_sync_to_async
     def get_contacts(self):
-        contacts = ContactModels.objects.filter(user=self.user).select_related("contact", "contact__user_profile")
+        from settings.models import UserSettings
+
+        contacts = ContactModels.objects.filter(user=self.user).select_related(
+            "contact", "contact__user_profile"
+        )
         blocked_ids = set(
             BlockModels.objects.filter(user=self.user).values_list("blocked_user_id", flat=True)
         )
+        # کسایی که خودِ من رو توی لیست مخاطبینشون دارن — برای چک «فقط مخاطبین»
+        who_has_me_as_contact = set(
+            ContactModels.objects.filter(contact_id=self.user_id).values_list("user_id", flat=True)
+        )
+
         result = []
         for item in contacts:
-            profile = item.contact.user_profile
+            target = item.contact
+            profile = target.user_profile
+
+            try:
+                target_settings = target.settings
+            except UserSettings.DoesNotExist:
+                target_settings = None
+
+            # ---- وضعیت آنلاین: فقط اگه طرف اجازه داده باشه نشون داده می‌شه ----
+            is_online_raw = target.id in self.online_users
+            online_visible = target_settings.online_status_visible if target_settings else True
+            online = is_online_raw and online_visible
+
+            # ---- آخرین بازدید: بر اساس everyone/contacts/nobody ----
+            last_seen_value = None
+            if target.last_seen:
+                visibility = target_settings.last_seen_visibility if target_settings else "everyone"
+                if visibility == "everyone":
+                    can_see_last_seen = True
+                elif visibility == "contacts":
+                    can_see_last_seen = self.user_id in who_has_me_as_contact
+                else:  # "nobody"
+                    can_see_last_seen = False
+
+                if can_see_last_seen:
+                    last_seen_value = target.last_seen.isoformat()
+
             result.append({
-                "id": item.contact.id,
-                "email": item.contact.email,
+                "id": target.id,
+                "email": target.email,
                 "name": profile.get_fullname(),
                 "image": profile.image.url if profile.image else None,
-                "online": item.contact.id in self.online_users,
-                "is_blocked": item.contact.id in blocked_ids,
+                "online": online,
+                "last_seen": last_seen_value,
+                "is_blocked": target.id in blocked_ids,
             })
         return result
 
@@ -572,7 +600,25 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
     def get_watchers(self):
         return list(ContactModels.objects.filter(contact_id=self.user_id).values_list("user_id", flat=True))
 
+    # ✅ NEW: چک می‌کنه خودِ این کاربر (که داره آنلاین/آفلاین می‌شه) اجازه
+    # داده که وضعیت آنلاینش دیده بشه یا نه
+    @database_sync_to_async
+    def get_online_visibility(self):
+        from settings.models import UserSettings
+        try:
+            return UserSettings.objects.get(user_id=self.user_id).online_status_visible
+        except UserSettings.DoesNotExist:
+            return True
+
     async def broadcast_presence(self, online):
+        if online:
+            # ✅ FIX: اگه کاربر «نمایش وضعیت آنلاین» رو خاموش کرده، هیچ‌وقت
+            # پیام "آنلاین شدم" broadcast نمی‌شه — نتیجه‌اش اینه که بقیه
+            # همیشه آفلاینش می‌بینن، دقیقاً همون چیزی که تنظیمش قول می‌ده
+            can_show_online = await self.get_online_visibility()
+            if not can_show_online:
+                online = False
+
         users = await self.get_watchers()
         for uid in users:
             await self.channel_layer.group_send(
