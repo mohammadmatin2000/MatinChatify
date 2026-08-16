@@ -4,6 +4,10 @@ import { useNavigate, Link } from "react-router-dom";
 import BorderAnimatedContainer from "../components/BorderAnimatedContainer";
 import { MessageCircleIcon, LockIcon, MailIcon, LoaderIcon } from "lucide-react";
 import useTranslation from "../hooks/useTranslation";
+// ✅ FIX: قبلاً "http://localhost:8000" مستقیم توی این فایل هاردکد بود،
+// جدا از بقیه‌ی اپ که از تنظیمات مرکزی استفاده می‌کنن — برای همین با
+// اینکه لاگین درست کار می‌کرد، ثبت‌نام همچنان Network Error می‌داد.
+import { API_URL } from "../lib/apiConfig";
 
 function SignUpPage() {
   const { t } = useTranslation();
@@ -31,7 +35,7 @@ function SignUpPage() {
 
     try {
       const res = await axios.post(
-        "http://localhost:8000/accounts/register/",
+        `${API_URL}/accounts/register/`,
         {
           email: formData.email,
           password: formData.password,

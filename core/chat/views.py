@@ -8,6 +8,7 @@ from .models import ContactModels, ChatModels, MessageModels,BlockModels,HiddenC
 from .serializers import (ContactSerializer, AddContactSerializer, ChatSerializer,
                           MessageSerializer,ReportSerializer,BlockSerializer)
 from accounts.models import User
+from settings.models import UserSettings
 from django.db.models import Q
 from rest_framework.views import APIView
 # ======================================================================================================================
@@ -60,7 +61,7 @@ class ConversationsView(APIView):
         if not partner_ids:
             return Response([])
 
-        # ✅ NEW: نگاشت partner_id -> زمانی که کاربر این چت رو پاک/مخفی کرده
+        # نگاشت partner_id -> زمانی که کاربر این چت رو پاک/مخفی کرده
         hidden_map = {
             h.partner_id: h.hidden_at
             for h in HiddenConversation.objects.filter(user=user, partner_id__in=partner_ids)
@@ -75,6 +76,19 @@ class ConversationsView(APIView):
 
         partners = User.objects.filter(id__in=partner_ids).select_related("user_profile")
         partners_map = {p.id: p for p in partners}
+
+        # ✅ NEW: کسایی که خودِ من رو مخاطب خودشون کردن — برای چک «فقط مخاطبین»
+        # توی حریم خصوصی (last_seen/photo/about visibility)
+        who_has_me_as_contact = set(
+            ContactModels.objects.filter(contact_id=user.id).values_list("user_id", flat=True)
+        )
+
+        def can_see(visibility, target_id):
+            if visibility == "everyone":
+                return True
+            if visibility == "nobody":
+                return False
+            return target_id in who_has_me_as_contact
 
         results = []
         for pid in partner_ids:
@@ -92,7 +106,7 @@ class ConversationsView(APIView):
             if not last_msg:
                 continue
 
-            # ✅ NEW: اگه این چت مخفی شده و بعد از مخفی‌شدن پیام جدیدی رد و بدل نشده، نشونش نده
+            # اگه این چت مخفی شده و بعد از مخفی‌شدن پیام جدیدی رد و بدل نشده، نشونش نده
             hidden_at = hidden_map.get(pid)
             if hidden_at is not None and last_msg.created_date <= hidden_at:
                 continue
@@ -107,9 +121,31 @@ class ConversationsView(APIView):
             else:
                 name = partner.email or partner.phone_number
 
+            try:
+                partner_settings = partner.settings
+            except UserSettings.DoesNotExist:
+                partner_settings = None
+
+            # ✅ FIX: عکس قبلاً بی‌قید و شرط فرستاده می‌شد، الان photo_visibility رو چک می‌کنه
             image = None
             if profile and profile.image:
-                image = request.build_absolute_uri(profile.image.url)
+                photo_visibility = partner_settings.photo_visibility if partner_settings else "everyone"
+                if can_see(photo_visibility, pid):
+                    image = request.build_absolute_uri(profile.image.url)
+
+            # ✅ NEW: بیوگرافی — قبلاً اصلاً توی این پاسخ نبود
+            bio = None
+            if profile:
+                about_visibility = partner_settings.about_visibility if partner_settings else "everyone"
+                if can_see(about_visibility, pid):
+                    bio = profile.bio
+
+            # ✅ NEW: آخرین بازدید — قبلاً اصلاً توی این پاسخ نبود
+            last_seen = None
+            if partner.last_seen:
+                last_seen_visibility = partner_settings.last_seen_visibility if partner_settings else "everyone"
+                if can_see(last_seen_visibility, pid):
+                    last_seen = partner.last_seen.isoformat()
 
             results.append({
                 "id": partner.id,
@@ -117,6 +153,8 @@ class ConversationsView(APIView):
                 "email": partner.email,
                 "phone_number": partner.phone_number,
                 "profile": image,
+                "bio": bio,
+                "last_seen": last_seen,
                 "is_contact": contact is not None,
                 "contact_record_id": contact.id if contact else None,
                 "last_message": MessageSerializer(last_msg, context={"request": request}).data,

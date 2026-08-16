@@ -1,14 +1,120 @@
 import {create} from "zustand";
 import axios from "axios";
 import toast from "react-hot-toast";
-// ✅ FIX: قبلاً اینجا `import { useChatStore } from "./useChatStore";` بود
-// که یه وابستگی چرخشی استاتیک می‌ساخت (useChatStore.js هم بالای فایلش
-// useAuthStore رو import می‌کنه). این حلقه زیر HMR ویت گاهی باعث می‌شد
-// یکی از دو ماژول قبل از کامل شدن export هاش استفاده بشه و این خطا بده:
-// "does not provide an export named 'useChatStore'". با dynamic import
-// داخل خود توابع، این حلقه‌ی استاتیک قطع می‌شه.
+import {API_URL} from "../lib/apiConfig";
+const BASE_URL = API_URL;
 
-const BASE_URL = "http://127.0.0.1:8000";
+
+let refreshTimer = null;
+let isRefreshing = false;
+let refreshWaiters = [];
+
+function notifyWaiters(newAccessToken) {
+    refreshWaiters.forEach((resolve) => resolve(newAccessToken));
+    refreshWaiters = [];
+}
+
+async function performTokenRefresh() {
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (!refreshToken) throw new Error("no refresh token");
+
+    // از axios خامِ بدون interceptor استفاده نمی‌کنیم لازم نیست چون این
+    // درخواست خودش هدف نیست که 401 بگیره؛ اگه بگیره یعنی واقعاً منقضی شده
+    const res = await axios.post(`${BASE_URL}/accounts/token/refresh/`, {
+        refresh: refreshToken,
+    });
+
+    const newAccess = res.data.access;
+    const newRefresh = res.data.refresh; // چون ROTATE_REFRESH_TOKENS روشنه
+
+    localStorage.setItem("accessToken", newAccess);
+    if (newRefresh) localStorage.setItem("refreshToken", newRefresh);
+
+    return newAccess;
+}
+
+// ✅ NEW: تمدید پیش‌دستانه — قبل از اینکه توکن ۱۲ ساعته منقضی بشه، خودمون
+// از قبل تازه‌ش می‌کنیم. این باعث می‌شه حتی درخواست‌هایی که با fetch()
+// (نه axios) زده می‌شن هم همیشه توکن معتبر از localStorage بخونن، بدون
+// اینکه اصلاً یه بار ۴۰۱ بگیرن.
+function scheduleProactiveRefresh() {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    // ۱۱ ساعت بعد (یک ساعت قبل از انقضای واقعی access token)
+    refreshTimer = setTimeout(async () => {
+        try {
+            await performTokenRefresh();
+        } catch (e) {
+            console.warn("⚠️ تمدید پیش‌دستانه‌ی توکن ناموفق بود:", e);
+        } finally {
+            scheduleProactiveRefresh();
+        }
+    }, 11 * 60 * 60 * 1000);
+}
+
+function clearProactiveRefresh() {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = null;
+}
+
+// ✅ NEW: Axios interceptor — شبکه‌ی ایمنی. اگه به هر دلیلی (کامپیوتر
+// خوابیده بوده، تایمر بالا هنوز نرسیده بوده، و غیره) یه درخواست ۴۰۱
+// بگیره، خودکار با refresh token یه توکن جدید می‌گیره و همون درخواست
+// رو یه‌بار دیگه با توکن تازه می‌فرسته — کاربر اصلاً چیزی حس نمی‌کنه.
+axios.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const originalRequest = error.config;
+        const status = error.response?.status;
+
+        const isAuthRoute =
+            originalRequest?.url?.includes("/accounts/login") ||
+            originalRequest?.url?.includes("/accounts/token/refresh") ||
+            originalRequest?.url?.includes("/accounts/otp/") ||
+            originalRequest?.url?.includes("/accounts/verify-2fa");
+
+        if (status !== 401 || isAuthRoute || originalRequest?._retry) {
+            return Promise.reject(error);
+        }
+
+        originalRequest._retry = true;
+
+        if (!localStorage.getItem("refreshToken")) {
+            useAuthStore.getState().forceLogout();
+            return Promise.reject(error);
+        }
+
+        if (isRefreshing) {
+            // یه درخواست دیگه همین الان داره توکن رو تمدید می‌کنه —
+            // منتظر نتیجه‌ش می‌مونیم به‌جای اینکه دوبار تمدید بزنیم
+            return new Promise((resolve, reject) => {
+                refreshWaiters.push((newToken) => {
+                    if (!newToken) {
+                        reject(error);
+                        return;
+                    }
+                    originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                    resolve(axios(originalRequest));
+                });
+            });
+        }
+
+        isRefreshing = true;
+        try {
+            const newAccess = await performTokenRefresh();
+            isRefreshing = false;
+            notifyWaiters(newAccess);
+            scheduleProactiveRefresh();
+
+            originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+            return axios(originalRequest);
+        } catch (refreshError) {
+            isRefreshing = false;
+            notifyWaiters(null);
+            useAuthStore.getState().forceLogout();
+            return Promise.reject(refreshError);
+        }
+    }
+);
 
 export const useAuthStore = create((set, get) => ({
     authUser: null,
@@ -25,7 +131,12 @@ export const useAuthStore = create((set, get) => ({
     // 🧠 تابع چک کردن احراز هویت
     checkAuth: async () => {
         const token = localStorage.getItem("accessToken");
-        if (!token) {
+        const refreshToken = localStorage.getItem("refreshToken");
+
+        // ✅ FIX: قبلاً اگه accessToken نبود، بدون چک کردن refreshToken
+        // مستقیم کاربر رو خارج می‌کرد. الان اگه refresh token هنوز
+        // معتبر باشه، همون اول یه access token تازه می‌گیره.
+        if (!token && !refreshToken) {
             set({authUser: null, isCheckingAuth: false});
             return;
         }
@@ -39,21 +150,22 @@ export const useAuthStore = create((set, get) => ({
 
             console.log("✅ User verified:", res.data);
             set({authUser: res.data});
+            scheduleProactiveRefresh();
 
             // ✅ اتصال مرکزی وضعیت آنلاین (فقط یک‌بار، idempotent)
             const {useChatStore} = await import("./useChatStore");
             useChatStore.getState().connectOnlineStatusSocket();
         } catch (error) {
+            // اگه علتش ۴۰۱ بوده، interceptor بالا خودش قبلاً تلاش کرده
+            // که با refresh token دوباره امتحان کنه؛ اگه بازم اینجا
+            // به catch رسیدیم یعنی واقعاً refresh token هم منقضی/نامعتبره
             console.error("❌ Auth check failed:", error);
-            localStorage.removeItem("accessToken");
-            localStorage.removeItem("refreshToken");
-            set({authUser: null});
+            get().forceLogout();
         } finally {
             set({isCheckingAuth: false});
         }
     },
 
-    // 🔐 ورود با ایمیل
     // 🔐 ورود با ایمیل
     login: async (email, password) => {
         try {
@@ -62,7 +174,7 @@ export const useAuthStore = create((set, get) => ({
                 password,
             });
 
-            // ✅ NEW: اگه تایید دو مرحله‌ای فعال باشه، توکن هنوز صادر نشده
+            // ✅ اگه تایید دو مرحله‌ای فعال باشه، توکن هنوز صادر نشده
             if (res.data.two_step_required) {
                 return {twoStepRequired: true, userId: res.data.user_id};
             }
@@ -74,6 +186,7 @@ export const useAuthStore = create((set, get) => ({
             const user = {id, email: userEmail};
             set({authUser: user});
             toast.success("✅ ورود موفق!");
+            scheduleProactiveRefresh();
 
             const {useChatStore} = await import("./useChatStore");
             useChatStore.getState().connectOnlineStatusSocket();
@@ -85,7 +198,7 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
-    // ✅ NEW: مرحله‌ی دوم لاگین — تایید کد دومرحله‌ای
+    // ✅ مرحله‌ی دوم لاگین — تایید کد دومرحله‌ای
     verify2FA: async (userId, code) => {
         try {
             const res = await axios.post(`${BASE_URL}/accounts/verify-2fa/`, {
@@ -100,6 +213,7 @@ export const useAuthStore = create((set, get) => ({
             const user = {id, email};
             set({authUser: user});
             toast.success("✅ ورود موفق!");
+            scheduleProactiveRefresh();
 
             const {useChatStore} = await import("./useChatStore");
             useChatStore.getState().connectOnlineStatusSocket();
@@ -149,6 +263,7 @@ export const useAuthStore = create((set, get) => ({
             const user = {id, phone_number};
             set({authUser: user});
             toast.success("✅ ورود موفق!");
+            scheduleProactiveRefresh();
 
             const {useChatStore} = await import("./useChatStore");
             useChatStore.getState().connectOnlineStatusSocket();
@@ -166,7 +281,20 @@ export const useAuthStore = create((set, get) => ({
         }
     },
 
-    // 🚪 خروج
+    // ✅ NEW: خروج «خاموش» — وقتی refresh token واقعاً منقضی/نامعتبر شده
+    // (نه با انتخاب خودِ کاربر)؛ بدون صدا زدن API لاگ‌اوت چون چیزی برای
+    // بلاک‌لیست کردن نمونده و ممکنه خودش دوباره ۴۰۱ بده
+    forceLogout: async () => {
+        clearProactiveRefresh();
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        set({authUser: null});
+
+        const {useChatStore} = await import("./useChatStore");
+        useChatStore.getState().logout();
+    },
+
+    // 🚪 خروج (با انتخاب خودِ کاربر)
     logout: async () => {
         try {
             const refresh = localStorage.getItem("refreshToken");
@@ -174,6 +302,7 @@ export const useAuthStore = create((set, get) => ({
         } catch (error) {
             console.warn("Logout API error (ignored):", error);
         } finally {
+            clearProactiveRefresh();
             localStorage.removeItem("accessToken");
             localStorage.removeItem("refreshToken");
             set({authUser: null});

@@ -1,7 +1,9 @@
 import { create } from "zustand";
+// ✅ FIX: قبلاً "http://localhost:8000" هاردکد بود. الان از تنظیمات مرکزی می‌خونه.
+import { API_URL } from "../lib/apiConfig";
 
 const STORAGE_KEY = "chatify_settings";
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = API_URL;
 
 const defaultSettings = {
   notificationsEnabled: true,
@@ -13,7 +15,7 @@ const defaultSettings = {
   enterToSend: true,
   fontSize: "medium",
   chatWallpaper: "default",
-  // ✅ NEW: این چهارتا الان با بک‌اند سینک می‌شن (بقیه فعلاً فقط local هستن)
+  // این چهارتا با بک‌اند سینک می‌شن (بقیه فعلاً فقط local هستن)
   notifGroupsEnabled: true,
   notifCallsEnabled: true,
   notifVibrateEnabled: true,
@@ -26,13 +28,19 @@ const defaultSettings = {
 
 const FONT_SIZE_PX = { small: 14, medium: 16, large: 18 };
 
-// ✅ NEW: نگاشت اسم فیلد فرانت به اسم فیلد بک‌اند — فقط تنظیمات اعلان
+// نگاشت اسم فیلد فرانت به اسم فیلد بک‌اند
+// ✅ FIX: onlineStatusVisible و readReceiptsEnabled قبلاً اینجا نبودن،
+// پس با اینکه UI تاگل می‌شد، هیچ‌وقت PATCH به سرور نمی‌رفت و فقط توی
+// localStorage همون دستگاه ذخیره می‌شد — کاربرای دیگه هیچوقت این
+// تغییرات رو نمی‌دیدن.
 const BACKEND_FIELD_MAP = {
   notificationsEnabled: "notif_messages",
   messagePreviewEnabled: "notif_preview",
   notifGroupsEnabled: "notif_groups",
   notifCallsEnabled: "notif_calls",
   notifVibrateEnabled: "notif_vibrate",
+  onlineStatusVisible: "online_status_visible",
+  readReceiptsEnabled: "read_receipts",
 };
 const REVERSE_FIELD_MAP = Object.fromEntries(
   Object.entries(BACKEND_FIELD_MAP).map(([fe, be]) => [be, fe])
@@ -68,8 +76,8 @@ export const useSettingsStore = create((set, get) => ({
   isSettingsLoading: false,
   settingsSaving: false,
 
-  // ✅ NEW: موقع باز شدن مودال تنظیمات صدا زده می‌شه — از سرور می‌خونه
-  // و مقادیر اعلان رو با local هماهنگ می‌کنه (سرور منبع درسته)
+  // موقع باز شدن مودال تنظیمات صدا زده می‌شه — از سرور می‌خونه
+  // و مقادیر اعلان/پرایوسی رو با local هماهنگ می‌کنه (سرور منبع درسته)
   fetchServerSettings: async () => {
     const token = localStorage.getItem("accessToken");
     if (!token) return;
@@ -101,7 +109,7 @@ export const useSettingsStore = create((set, get) => ({
     persist(next);
     set({ [key]: next[key] });
 
-    // ✅ NEW: اگه این کلید با بک‌اند سینک می‌شه، همزمان PATCH بفرست
+    // اگه این کلید با بک‌اند سینک می‌شه، همزمان PATCH بفرست
     const backendField = BACKEND_FIELD_MAP[key];
     if (backendField) {
       get()._syncToServer({ [backendField]: next[key] });
@@ -120,7 +128,7 @@ export const useSettingsStore = create((set, get) => ({
     }
   },
 
-  // ✅ NEW: ارسال PATCH به سرور — داخلی، مستقیم صدا زده نمی‌شه
+  // ارسال PATCH به سرور — داخلی، مستقیم صدا زده نمی‌شه
   _syncToServer: async (payload) => {
     const token = localStorage.getItem("accessToken");
     if (!token) return;

@@ -9,7 +9,7 @@ from django.db.models import Q
 from chat.models import MessageModels, ContactModels, BlockModels
 from accounts.models import User
 from settings.push_utils import send_web_push
-
+from settings.models import UserSettings
 # ======================================================================================================================
 online_users_list = set()
 # ======================================================================================================================
@@ -323,23 +323,36 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "meta": event["meta"],
         }))
 
-    # -------------------- ✅ NEW: علامت‌گذاری پیام‌ها به‌عنوان خوانده‌شده (تیک آبی) --------------------
+    # -------------------- علامت‌گذاری پیام‌ها به‌عنوان خوانده‌شده (تیک آبی) --------------------
     async def handle_mark_read(self, data):
         message_ids = data.get("messageIds", [])
         if not message_ids:
             return
 
         reader_id = self.user_id
-        updated_ids, sender_ids = await self.mark_messages_read(message_ids, reader_id)
-        if not updated_ids:
+        per_sender_ids = await self.mark_messages_read(message_ids, reader_id)
+        if not per_sender_ids:
             return
 
-        for sender_id in sender_ids:
+        reader_shares_receipts = await self.get_read_receipts_setting(reader_id)
+
+        for sender_id, ids in per_sender_ids.items():
+            sender_wants_receipts = await self.get_read_receipts_setting(sender_id)
+            if not (reader_shares_receipts and sender_wants_receipts):
+                continue
+
             await self.channel_layer.group_send(
                 f"user_{sender_id}",
-                {"type": "read_receipt_notify", "messageIds": updated_ids, "readerId": reader_id}
+                {"type": "read_receipt_notify", "messageIds": ids, "readerId": reader_id}
             )
-        print(f"👁️ {len(updated_ids)} پیام توسط user_id={reader_id} خونده شد")
+        print(f"👁️ {len(message_ids)} پیام توسط user_id={reader_id} خونده شد")
+
+    @database_sync_to_async
+    def get_read_receipts_setting(self, user_id):
+        try:
+            return UserSettings.objects.get(user_id=user_id).read_receipts
+        except UserSettings.DoesNotExist:
+            return True
 
     # ======================================================================
     # DB helpers (همه async-safe، با sync_to_async / database_sync_to_async)
@@ -431,10 +444,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def mark_messages_read(self, message_ids, reader_id):
         # ✅ SECURITY: فقط پیام‌هایی که واقعاً receiver‌شون خودِ کاربره علامت می‌خورن
         qs = MessageModels.objects.filter(id__in=message_ids, receiver_id=reader_id, is_read=False)
-        sender_ids = list(qs.values_list("sender_id", flat=True).distinct())
-        updated_ids = list(qs.values_list("id", flat=True))
+        per_sender = {}
+        for msg_id, sender_id in qs.values_list("id", "sender_id"):
+            per_sender.setdefault(sender_id, []).append(msg_id)
         qs.update(is_read=True, read_at=now())
-        return updated_ids, sender_ids
+        return per_sender
 
     # ✅ NEW: ارسال Web Push به گیرنده‌ی پیام
     @database_sync_to_async
@@ -531,16 +545,23 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             "readerId": event["readerId"],
         }))
 
+    # ✅ NEW: وقتی طرف مقابل last_seen_visibility / photo_visibility /
+    # about_visibility / online_status_visible‌ش رو عوض می‌کنه، این پیام
+    # فوراً از settings/views.py می‌رسه و فرانت لحظه‌ای آپدیت می‌شه —
+    # بدون نیاز به رفرش یا باز/بسته کردن دوباره‌ی چت.
+    async def profile_privacy_update(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "profile_privacy_update",
+            "userId": event["userId"],
+            "online": event["online"],
+            "lastSeen": event.get("lastSeen"),
+            "image": event.get("image"),
+            "bio": event.get("bio"),
+        }))
+
     # ======================================================================
     # DB helpers
     # ======================================================================
-
-    # ✅ FIX: قبلاً این متد دو بار توی همین کلاس تعریف شده بود — نسخه‌ی
-    # اولش (که last_seen رو داشت) هیچ‌وقت واقعاً اجرا نمی‌شد، چون توی
-    # پایتون تعریف دوم متد اولی رو کامل بی‌اثر می‌کنه. این‌جا فقط یه‌بار
-    # تعریف شده و هم last_seen رو برمی‌گردونه، هم is_blocked رو، و هم
-    # هر دو تنظیم حریم خصوصی (online_status_visible و last_seen_visibility)
-    # طرفِ مقابل رو واقعاً رعایت می‌کنه.
     @database_sync_to_async
     def get_contacts(self):
         from settings.models import UserSettings
@@ -555,6 +576,19 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
         who_has_me_as_contact = set(
             ContactModels.objects.filter(contact_id=self.user_id).values_list("user_id", flat=True)
         )
+
+        def can_see(visibility, target_id):
+            if visibility == "everyone":
+                return True
+            if visibility == "nobody":
+                return False
+            # ✅ FIX: قبلاً اینجا `self.user_id in who_has_me_as_contact` چک
+            # می‌شد که همیشه غلط بود (چون self.user_id هیچ‌وقت توی لیست
+            # آیدی‌های "بقیه‌ی کاربرها" نیست، مگر اینکه کسی خودشو مخاطب خودش
+            # کرده باشه). الان درست چک می‌شه: آیا target.id (طرفی که داریم
+            # اطلاعاتشو می‌بینیم) خودِ من رو توی کانتکت‌لیستش داره یا نه —
+            # یعنی دقیقاً همون منطق «فقط مخاطبینم می‌تونن ببینن».
+            return target_id in who_has_me_as_contact
 
         result = []
         for item in contacts:
@@ -575,21 +609,31 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
             last_seen_value = None
             if target.last_seen:
                 visibility = target_settings.last_seen_visibility if target_settings else "everyone"
-                if visibility == "everyone":
-                    can_see_last_seen = True
-                elif visibility == "contacts":
-                    can_see_last_seen = self.user_id in who_has_me_as_contact
-                else:  # "nobody"
-                    can_see_last_seen = False
-
-                if can_see_last_seen:
+                if can_see(visibility, target.id):
                     last_seen_value = target.last_seen.isoformat()
+
+            # ---- عکس پروفایل ----
+            # ✅ NEW: قبلاً عکس بدون هیچ چکی همیشه فرستاده می‌شد
+            image_value = None
+            if profile and profile.image:
+                photo_visibility = target_settings.photo_visibility if target_settings else "everyone"
+                if can_see(photo_visibility, target.id):
+                    image_value = profile.image.url
+
+            # ---- بیوگرافی ----
+            # ✅ NEW: قبلاً اصلاً توی این پاسخ وجود نداشت
+            bio_value = None
+            if profile:
+                about_visibility = target_settings.about_visibility if target_settings else "everyone"
+                if can_see(about_visibility, target.id):
+                    bio_value = profile.bio
 
             result.append({
                 "id": target.id,
                 "email": target.email,
                 "name": profile.get_fullname(),
-                "image": profile.image.url if profile.image else None,
+                "image": image_value,
+                "bio": bio_value,
                 "online": online,
                 "last_seen": last_seen_value,
                 "is_blocked": target.id in blocked_ids,
@@ -600,7 +644,7 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
     def get_watchers(self):
         return list(ContactModels.objects.filter(contact_id=self.user_id).values_list("user_id", flat=True))
 
-    # ✅ NEW: چک می‌کنه خودِ این کاربر (که داره آنلاین/آفلاین می‌شه) اجازه
+    # چک می‌کنه خودِ این کاربر (که داره آنلاین/آفلاین می‌شه) اجازه
     # داده که وضعیت آنلاینش دیده بشه یا نه
     @database_sync_to_async
     def get_online_visibility(self):
@@ -612,9 +656,6 @@ class OnlineStatusConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_presence(self, online):
         if online:
-            # ✅ FIX: اگه کاربر «نمایش وضعیت آنلاین» رو خاموش کرده، هیچ‌وقت
-            # پیام "آنلاین شدم" broadcast نمی‌شه — نتیجه‌اش اینه که بقیه
-            # همیشه آفلاینش می‌بینن، دقیقاً همون چیزی که تنظیمش قول می‌ده
             can_show_online = await self.get_online_visibility()
             if not can_show_online:
                 online = False

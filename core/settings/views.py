@@ -7,17 +7,28 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.http import HttpResponse
 from rest_framework.views import APIView
-from .models import UserSettings,PushSubscription
-from chat.models import BlockModels
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from .models import UserSettings, PushSubscription
 from .serializers import (
     ChangePasswordSerializer,
     DeleteAccountSerializer,
     UserSettingsSerializer,
     PushSubscriptionSerializer
 )
-from chat.models import MessageModels
+from chat.models import MessageModels, ContactModels
+from chat.consumers import OnlineStatusConsumer
+
 User = get_user_model()
 # ======================================================================================================================
+PRIVACY_FIELDS = {
+    "online_status_visible",
+    "last_seen_visibility",
+    "photo_visibility",
+    "about_visibility",
+}
+
+
 class UserSettingsView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSettingsSerializer
     permission_classes = [IsAuthenticated]
@@ -28,7 +39,60 @@ class UserSettingsView(generics.RetrieveUpdateAPIView):
 
     def patch(self, request, *args, **kwargs):
         kwargs["partial"] = True
-        return self.update(request, *args, **kwargs)
+        response = self.update(request, *args, **kwargs)
+
+        if response.status_code < 400 and PRIVACY_FIELDS & set(request.data.keys()):
+            self._broadcast_profile_update(request.user)
+
+        return response
+
+    def _broadcast_profile_update(self, user):
+        try:
+            channel_layer = get_channel_layer()
+
+            settings_obj = UserSettings.objects.filter(user=user).first()
+            is_actually_online = user.id in OnlineStatusConsumer.online_users
+            online_visible = settings_obj.online_status_visible if settings_obj else True
+            effective_online = is_actually_online and online_visible
+
+            last_seen_visibility = settings_obj.last_seen_visibility if settings_obj else "everyone"
+            photo_visibility = settings_obj.photo_visibility if settings_obj else "everyone"
+            about_visibility = settings_obj.about_visibility if settings_obj else "everyone"
+
+            profile = getattr(user, "user_profile", None)
+
+            # ✅ کسایی که خودِ user رو مخاطب خودشون کردن — این‌ها دقیقاً همون
+            # مجموعه‌ای هستن که سطح دسترسی "فقط مخاطبین" بهشون اجازه می‌ده،
+            # پس اگه visibility روی "nobody" نباشه، این گروه حق دیدن دارن.
+            watcher_ids = ContactModels.objects.filter(contact_id=user.id).values_list("user_id", flat=True)
+
+            last_seen_value = None
+            if user.last_seen and last_seen_visibility != "nobody":
+                last_seen_value = user.last_seen.isoformat()
+
+            image_value = None
+            if profile and profile.image and photo_visibility != "nobody":
+                image_value = profile.image.url
+
+            bio_value = None
+            if profile and about_visibility != "nobody":
+                bio_value = profile.bio
+
+            for uid in watcher_ids:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{uid}",
+                    {
+                        "type": "profile_privacy_update",
+                        "userId": user.id,
+                        "online": effective_online,
+                        "lastSeen": last_seen_value,
+                        "image": image_value,
+                        "bio": bio_value,
+                    },
+                )
+        except Exception as e:
+            # نبود این broadcast نباید باعث خطا خوردن خودِ ذخیره‌ی تنظیمات بشه
+            print("⚠️ خطا در broadcast تغییرات پروفایل:", e)
 # ======================================================================================================================
 class ChangePasswordView(APIView):
     """POST /settings/change-password/  {old_password, new_password}"""

@@ -19,7 +19,12 @@ class CallLogListCreateView(generics.ListCreateAPIView):
         serializer.save(caller=self.request.user)
 # ======================================================================================================================
 # جزئیات یک تماس خصوصی خاص
-class CallLogDetailView(generics.RetrieveAPIView):
+# ✅ FIX: قبلاً RetrieveAPIView بود که فقط GET داشت، برای همین درخواست
+# DELETE از فرانت با 405 Method Not Allowed رد می‌شد. الان
+# RetrieveDestroyAPIView شده که DELETE رو هم پشتیبانی می‌کنه. get_queryset
+# همچنان فقط تماس‌های خودِ کاربر (caller یا receiver) رو برمی‌گردونه، پس
+# کسی نمی‌تونه تماس بین دو نفر دیگه رو حذف کنه.
+class CallLogDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = CallLogSerializer
     permission_classes = [IsAuthenticated]
 
@@ -42,8 +47,7 @@ class GroupCallLogListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(initiator=self.request.user)
 # ======================================================================================================================
-# جزئیات یک تماس گروهی خاص (شامل لیست شرکت‌کنندگان)
-class GroupCallLogDetailView(generics.RetrieveAPIView):
+class GroupCallLogDetailView(generics.RetrieveDestroyAPIView):
     serializer_class = GroupCallLogSerializer
     permission_classes = [IsAuthenticated]
 

@@ -1,7 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-from .models import UserSettings,PushSubscription
+from .models import UserSettings, PushSubscription
+
 User = get_user_model()
 # ======================================================================================================================
 class UserSettingsSerializer(serializers.ModelSerializer):
@@ -32,9 +33,14 @@ class UserSettingsSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["updated_date", "last_backup_date"]
 # ======================================================================================================================
-class PushSubscriptionSerializer(serializers.ModelSerializer):
+# ✅ FIX: این سریالایزر از ModelSerializer ارث‌بری کرده بود ولی Meta نداشت
+# (DRF با AssertionError کرش می‌کرد به محض instantiate شدن)، و فیلدش
+# اسمش "key" بود در حالی که views.py دنبال "keys" می‌گشت (KeyError).
+# چون این دیتا مستقیم مپ به یه مدل نمی‌شه (keys یه dict تو در توئه که
+# شامل p256dh و auth هست)، از Serializer ساده استفاده می‌کنیم نه ModelSerializer.
+class PushSubscriptionSerializer(serializers.Serializer):
     endpoint = serializers.URLField()
-    key = serializers.DictField()
+    keys = serializers.DictField()
 # ======================================================================================================================
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)

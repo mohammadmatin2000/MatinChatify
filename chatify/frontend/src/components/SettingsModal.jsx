@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   XIcon,
   UserIcon,
@@ -17,6 +17,9 @@ import {
   MailIcon,
   CornerDownLeftIcon,
   TypeIcon,
+  UsersRoundIcon,
+  PhoneCallIcon,
+  VibrateIcon,
 } from "lucide-react";
 import { useSettingsStore } from "../store/useSettingsStore";
 
@@ -99,6 +102,16 @@ const FONT_SIZE_OPTIONS = [
 function SettingsModal({ isOpen, onClose, profile, isSoundEnabled, toggleSound, onLogout }) {
   const [activeCategory, setActiveCategory] = useState("account");
   const settings = useSettingsStore();
+
+  // ✅ FIX: قبلاً هیچ‌جا fetchServerSettings صدا زده نمی‌شد، پس مقادیر
+  // پرایوسی/اعلان همیشه از localStorage خونده می‌شدن، نه از سرور —
+  // یعنی روی یه دستگاه دیگه یا بعد از پاک شدن کش، مقادیر واقعی گم می‌شدن.
+  useEffect(() => {
+    if (isOpen) {
+      settings.fetchServerSettings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -269,7 +282,7 @@ function SettingsModal({ isOpen, onClose, profile, isSoundEnabled, toggleSound, 
                   icon={EyeIcon}
                   iconColor="bg-emerald-500/20 text-emerald-400"
                   title="نمایش وضعیت آنلاین"
-                  description="ترجیح محلی — فقط روی همین دستگاه ذخیره می‌شه"
+                  description="با بک‌اند سینک می‌شه — کسایی که مخاطبت هستن این تغییر رو می‌بینن"
                   checked={settings.onlineStatusVisible}
                   onToggle={() => settings.toggleSetting("onlineStatusVisible")}
                 />
@@ -277,7 +290,7 @@ function SettingsModal({ isOpen, onClose, profile, isSoundEnabled, toggleSound, 
                   icon={CheckCheckIcon}
                   iconColor="bg-emerald-500/20 text-emerald-400"
                   title="تیک دوبار خوانده‌شدن"
-                  description="ترجیح محلی — فقط روی همین دستگاه ذخیره می‌شه"
+                  description="با بک‌اند سینک می‌شه"
                   checked={settings.readReceiptsEnabled}
                   onToggle={() => settings.toggleSetting("readReceiptsEnabled")}
                 />

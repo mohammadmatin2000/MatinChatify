@@ -1,20 +1,23 @@
-import { XIcon, PhoneIcon, VideoIcon, ClockIcon  } from "lucide-react";
+import { XIcon, PhoneIcon, VideoIcon, ClockIcon, Quote } from "lucide-react";
 
 import { useChatStore } from "../store/useChatStore";
 import { useCallStore } from "../store/useCallStore";
 import ChatHeaderMenu from "./ChatHeaderMenu";
 import useTranslation from "../hooks/useTranslation";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 function ChatHeader() {
   const { selectedUser, setSelectedUser, onlineUsers, blockStatus } = useChatStore();
   const { startCall, callStatus } = useCallStore();
   const { t, language } = useTranslation();
 
-  // ✅ فرمت «آخرین بازدید» — حالا با ترجمه و locale بر اساس زبون فعلی اپ،
-  // نه همیشه فارسی. dateLocaleStr همون الگوییه که توی ProfileHeader هست.
+  // فرمت «آخرین بازدید» — با ترجمه و locale بر اساس زبون فعلی اپ
   const dateLocaleStr = language === "fa" ? "fa-IR" : language === "de" ? "de-DE" : "en-US";
+
+  // ✅ NEW: بیو ممکنه طولانی باشه — با کلیک باز/بسته می‌شه، و با عوض شدن
+  // مخاطب دوباره بسته می‌شه تا حالت قبلی رو نبره روی چت جدید
+  const [bioExpanded, setBioExpanded] = useState(false);
 
   const formatLastSeen = (isoString) => {
     if (!isoString) return null;
@@ -39,6 +42,8 @@ function ChatHeader() {
     ? onlineUsers.some((id) => String(id) === String(selectedUser.id || selectedUser._id))
     : false;
 
+  const selectedUserKey = selectedUser?.id || selectedUser?._id || null;
+
   useEffect(() => {
     const esc = (e) => {
       if (e.key === "Escape") {
@@ -50,6 +55,11 @@ function ChatHeader() {
 
     return () => window.removeEventListener("keydown", esc);
   }, [setSelectedUser]);
+
+  // ✅ NEW: هر بار چت عوض شد، حالت باز/بسته‌ی بیو ریست بشه
+  useEffect(() => {
+    setBioExpanded(false);
+  }, [selectedUserKey]);
 
   if (!selectedUser) return null;
 
@@ -64,10 +74,14 @@ function ChatHeader() {
   const isBlockedEitherWay = blockStatus.iBlockedThem || blockStatus.theyBlockedMe;
   const canCall = callStatus === "idle" && !isBlockedEitherWay;
 
-  // ✅ آخرین بازدید از raw.last_seen (که سریالایزر/سوکت مخاطبین برمی‌گردونه)
+  // آخرین بازدید از raw.last_seen (که سریالایزر/سوکت مخاطبین برمی‌گردونه)
   const lastSeenText = !isOnline
     ? formatLastSeen(selectedUser.raw?.last_seen || selectedUser.last_seen)
     : null;
+
+  // بیوگرافی طرف مقابل — سرور فقط وقتی مقدار می‌فرسته که about_visibility
+  // طرف اجازه بده؛ اگه خودش خاموشش کرده باشه، همیشه null‌ه و چیزی نشون داده نمی‌شه
+  const bioText = selectedUser.raw?.bio || selectedUser.bio || null;
 
   const handleAudioCall = () => {
     if (!canCall) return;
@@ -86,9 +100,9 @@ function ChatHeader() {
   };
 
   return (
-    <div className="flex justify-between items-center bg-slate-800/50 border-b border-slate-700/50 px-6 h-[84px]">
-      <div className="flex items-center gap-3">
-        <div className="relative">
+    <div className="flex justify-between items-start bg-slate-800/50 border-b border-slate-700/50 px-6 py-3 min-h-[84px]">
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="relative flex-shrink-0 mt-0.5">
           <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-700">
             <img
               src={profilePic}
@@ -105,8 +119,8 @@ function ChatHeader() {
           />
         </div>
 
-        <div>
-          <h3 className="text-slate-100 font-medium">{selectedUser.name}</h3>
+        <div className="min-w-0">
+          <h3 className="text-slate-100 font-medium truncate">{selectedUser.name}</h3>
           <div className="flex items-center gap-1.5 mt-0.5">
             {blockStatus.iBlockedThem ? (
               <span className="text-xs text-red-400/90">{t("chatHeader.blocked")}</span>
@@ -129,10 +143,29 @@ function ChatHeader() {
               <span className="text-xs text-slate-500">{t("common.offline")}</span>
             )}
           </div>
+
+          {/* ✅ NEW: بیو — قابل کلیک برای باز شدن کامل، فقط وقتی سرور مقداری برگردونده باشه */}
+          {bioText && (
+            <button
+              type="button"
+              onClick={() => setBioExpanded((v) => !v)}
+              className="group/bio flex items-start gap-1.5 mt-1.5 text-right max-w-[280px] cursor-pointer"
+              title={bioExpanded ? "" : "برای دیدن کامل کلیک کن"}
+            >
+              <Quote className="w-3 h-3 mt-[3px] text-cyan-500/60 flex-shrink-0 group-hover/bio:text-cyan-400 transition-colors" />
+              <span
+                className={`text-[11.5px] leading-relaxed text-slate-400 group-hover/bio:text-slate-300 transition-colors ${
+                  bioExpanded ? "whitespace-pre-wrap break-words" : "truncate block"
+                }`}
+              >
+                {bioText}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
         <button
           onClick={handleAudioCall}
           disabled={!canCall}

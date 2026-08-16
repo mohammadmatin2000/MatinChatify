@@ -1,8 +1,11 @@
 import {create} from "zustand";
 import toast from "react-hot-toast";
 import {useAuthStore} from "./useAuthStore";
+// ✅ FIX: قبلاً "http://localhost:8000" هاردکد بود که فقط وقتی فرانت و
+// بک‌اند رو یه کامپیوتر بودن جواب می‌داد. الان از تنظیمات مرکزی می‌خونه.
+import {API_URL, WS_URL} from "../lib/apiConfig";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = API_URL;
 
 const safeDate = (value) => {
     if (!value) return new Date();
@@ -39,9 +42,7 @@ export const useChatStore = create((set, get) => ({
     onlineUsers: [],
     searchResults: [],
     isSearching: false,
-    // ✅ NEW: پیام پین‌شده‌ی مکالمه‌ی خصوصی باز — بین دو طرف از طریق سوکت سینک می‌شه
     pinnedMessageId: null,
-    // ✅ NEW: وضعیت بلاک مکالمه‌ی فعلاً باز — { iBlockedThem, theyBlockedMe }
     blockStatus: {iBlockedThem: false, theyBlockedMe: false},
 
 
@@ -61,7 +62,7 @@ export const useChatStore = create((set, get) => ({
 
         onlineStatusConnecting = true;
 
-        const socket = new WebSocket(`ws://localhost:8000/ws/online-status/?token=${token}`);
+        const socket = new WebSocket(`${WS_URL}/ws/online-status/?token=${token}`);
         onlineStatusSocket = socket;
 
         socket.onopen = () => {
@@ -81,6 +82,28 @@ export const useChatStore = create((set, get) => ({
                 case "contacts_list": {
                     const onlineIds = data.contacts.filter((c) => c.online).map((c) => String(c.id));
                     get().setOnlineUsers(onlineIds);
+
+                    // ✅ NEW: همین اسنپ‌شات اولیه شامل last_seen/image/bio هم هست —
+                    // بذاریمش روی chatList/allContacts که همون لحظه‌ی اول درست باشن
+                    set((state) => {
+                        const byId = new Map(data.contacts.map((c) => [String(c.id), c]));
+                        const patch = (u) => {
+                            const c = u && byId.get(String(u._id ?? u.id));
+                            if (!c) return u;
+                            return {
+                                ...u,
+                                profile: c.image ?? u.profile,
+                                bio: c.bio ?? null,
+                                last_seen: c.last_seen ?? null,
+                                raw: {...(u.raw || {}), profile: c.image ?? u.profile, bio: c.bio ?? null, last_seen: c.last_seen ?? null},
+                            };
+                        };
+                        return {
+                            chatList: state.chatList.map(patch),
+                            allContacts: state.allContacts.map(patch),
+                            selectedUser: patch(state.selectedUser),
+                        };
+                    });
                     break;
                 }
                 case "presence_update": {
@@ -88,7 +111,35 @@ export const useChatStore = create((set, get) => ({
                     else get().removeOnlineUser(String(data.userId));
                     break;
                 }
-                // ✅ NEW: طرف مقابل (یا خودت از یه سشن دیگه) پیام‌هایی که فرستادی رو خونده
+                // ✅ NEW: طرف مقابل تنظیمات حریم خصوصی‌شو عوض کرده (آخرین بازدید/
+                // عکس/بیو/وضعیت آنلاین) — همون لحظه توی chatList، allContacts و
+                // اگه همین چت باز باشه توی selectedUser هم اعمال می‌شه
+                case "profile_privacy_update": {
+                    const {userId, online, lastSeen, image, bio} = data;
+                    const idStr = String(userId);
+
+                    if (online) get().addOnlineUser(idStr);
+                    else get().removeOnlineUser(idStr);
+
+                    set((state) => {
+                        const patch = (u) => {
+                            if (!u || String(u._id ?? u.id) !== idStr) return u;
+                            return {
+                                ...u,
+                                profile: image,
+                                bio,
+                                last_seen: lastSeen,
+                                raw: {...(u.raw || {}), profile: image, bio, last_seen: lastSeen},
+                            };
+                        };
+                        return {
+                            chatList: state.chatList.map(patch),
+                            allContacts: state.allContacts.map(patch),
+                            selectedUser: patch(state.selectedUser),
+                        };
+                    });
+                    break;
+                }
                 case "read_receipt": {
                     const {messageIds = [], readerId} = data;
                     const idSet = new Set(messageIds.map(String));
@@ -211,7 +262,6 @@ export const useChatStore = create((set, get) => ({
 
         get().getMessagesByUserId();
         get().subscribeToMessages(userId);
-        // ✅ NEW: وضعیت بلاک این مکالمه رو می‌گیریم
         get().fetchBlockStatus(userId);
     },
 
@@ -225,7 +275,7 @@ export const useChatStore = create((set, get) => ({
         set({selectedUser: null, selectedGroup: null, messages: []});
     },
 
-    // ---------------- 🚫 Block / Report (✅ NEW) ----------------
+    // ---------------- 🚫 Block / Report ----------------
     fetchBlockStatus: async (userId) => {
         const token = localStorage.getItem("accessToken");
         if (!token || !userId) return;
@@ -327,6 +377,10 @@ export const useChatStore = create((set, get) => ({
                     phoneNumber: c.phone_number || null,
                     name: c.name || c.display_name || c.phone_number || c.contact_email,
                     profile: c.profile || null,
+                    // ✅ NEW: قبلاً اینا فقط داخل raw بودن (چون raw: c بود)، ولی
+                    // برای هماهنگی با chatList همین‌جا هم صریح می‌ذاریمشون
+                    bio: c.bio || null,
+                    last_seen: c.last_seen || null,
                     raw: c,
                 })),
             });
@@ -340,7 +394,6 @@ export const useChatStore = create((set, get) => ({
     chatList: [],
     isChatListLoading: false,
 
-    // ✅ NEW: لیست واقعی مکالمات (نه فقط مخاطبین رسمی)
     getChatList: async () => {
         const token = localStorage.getItem("accessToken");
         if (!token) return;
@@ -358,8 +411,18 @@ export const useChatStore = create((set, get) => ({
                     phoneNumber: c.phone_number || null,
                     name: c.name,
                     profile: c.profile || null,
+                    // ✅ FIX: last_seen و bio قبلاً اصلاً اینجا map نمی‌شدن، برای
+                    // همین ChatHeader هیچ‌وقت چیزی برای نمایش پیدا نمی‌کرد —
+                    // حتی با اینکه بک‌اند درست می‌فرستادشون.
+                    bio: c.bio || null,
+                    last_seen: c.last_seen || null,
                     is_contact: c.is_contact,
-                    raw: {id: c.contact_record_id, profile: c.profile},
+                    raw: {
+                        id: c.contact_record_id,
+                        profile: c.profile,
+                        bio: c.bio || null,
+                        last_seen: c.last_seen || null,
+                    },
                     last_message: c.last_message,
                 })),
             });
@@ -371,7 +434,7 @@ export const useChatStore = create((set, get) => ({
     },
 
 
-    // ---------------- 🔍 Search (فعلاً بلااستفاده، برای آینده نگه داشته شده) ----------------
+    // ---------------- 🔍 Search ----------------
     searchUsers: async (query) => {
         const token = localStorage.getItem("accessToken");
         if (!token) return;
@@ -395,8 +458,6 @@ export const useChatStore = create((set, get) => ({
 
     clearSearch: () => set({searchResults: []}),
 
-    // ✅ حالا با شماره + اسم دلخواه کار می‌کنه (مثل واتساب)
-    // ✅ حالا با شماره یا با user_id (از جستجوی ایمیل) کار می‌کنه
     addContact: async ({phoneNumber, userId, displayName}) => {
         const token = localStorage.getItem("accessToken");
         if (!token) return toast.error("No access token found");
@@ -457,8 +518,6 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ✅ NEW: پاک کردن یه چت از لیست (فقط برای کاربر جاری) — مخاطب و پیام‌ها دست‌نخورده می‌مونن.
-    // اگه بعداً پیام جدیدی رد و بدل بشه، این چت خودش دوباره تو لیست ظاهر می‌شه.
     deleteConversation: async (partnerId) => {
         const token = localStorage.getItem("accessToken");
         if (!token) return toast.error("No access token found");
@@ -508,9 +567,7 @@ export const useChatStore = create((set, get) => ({
                 fileName: msg.file_name || msg.fileName || null,
                 messageType: msg.message_type || msg.messageType || "text",
                 meta: msg.meta || null,
-                // ✅ NEW: وضعیت خوانده‌شدن پیام (برای تیک آبی)
                 isRead: msg.is_read ?? msg.isRead ?? false,
-                // ✅ NEW: اگه بک‌اند این فیلد رو برگردونه، پیش‌نمایش ریپلای بعد از رفرش هم می‌مونه
                 replyTo: msg.replyTo || msg.reply_to || null,
                 createdAt: safeDate(msg.created_date || msg.createdAt),
                 isOptimistic: false,
@@ -526,14 +583,11 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ✅ sendMessage حالا یه payload کامل قبول می‌کنه:
-    // { text, image (File|base64|null), file (File|base64|null), fileName, messageType, meta, replyTo }
     sendMessage: async (payload = {}) => {
         const {selectedUser, messages, socket, blockStatus} = get();
         const {authUser} = useAuthStore.getState();
         if (!selectedUser || !authUser?.id) return toast.error("No selected user or auth user");
 
-        // ✅ NEW: قبل از هر چیز چک بلاک (سمت کلاینت — سرور هم دوباره چک می‌کنه)
         if (blockStatus.iBlockedThem || blockStatus.theyBlockedMe) {
             toast.error(
                 blockStatus.iBlockedThem
@@ -554,7 +608,6 @@ export const useChatStore = create((set, get) => ({
             fileName = null,
             messageType = "text",
             meta = null,
-            // ✅ NEW: { id, text, senderName } — از منوی «ریپلای» پیام می‌آد
             replyTo = null,
         } = payload;
 
@@ -613,7 +666,6 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ✅ NEW: علامت‌گذاری پیام‌های دریافتی به‌عنوان خوانده‌شده (تیک آبی طرف مقابل)
     markMessagesRead: (messageIds) => {
         const {socket} = get();
         const realIds = (messageIds || []).filter((id) => typeof id !== "string" || !id.startsWith("temp-"));
@@ -627,7 +679,7 @@ export const useChatStore = create((set, get) => ({
         const token = localStorage.getItem("accessToken");
         if (!token) return;
 
-        const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${roomName}/?token=${token}`);
+        const ws = new WebSocket(`${WS_URL}/ws/chat/${roomName}/?token=${token}`);
 
         ws.onopen = () => console.log("🟢 WebSocket connected:", roomName);
         ws.onclose = () => console.log("🔴 WebSocket closed:", roomName);
@@ -639,7 +691,6 @@ export const useChatStore = create((set, get) => ({
 
                 if (data.type === "connection") return;
 
-                // ✅ NEW: خطاهایی مثل «بلاک هستید» از سرور اینجا نمایش داده می‌شن
                 if (data.type === "error") {
                     if (data.error) toast.error(data.error);
                     return;
@@ -663,13 +714,11 @@ export const useChatStore = create((set, get) => ({
                     return;
                 }
 
-                // ✅ NEW: پین/آن‌پین که طرف مقابل (یا خودت از تب دیگه) انجام داده
                 if (data.type === "pin_message") {
                     set({pinnedMessageId: data.pinned ? data.messageId : null});
                     return;
                 }
 
-                // ✅ NEW: آپدیت لحظه‌ای نتیجه‌ی رأی‌گیری
                 if (data.type === "poll_update") {
                     const {messageId, meta} = data;
                     set((state) => ({
@@ -689,12 +738,7 @@ export const useChatStore = create((set, get) => ({
                             _id: msg.id || msg._id || msg.tempId,
                             messageType: msg.messageType || msg.message_type || "text",
                             fileName: msg.fileName || msg.file_name || null,
-                            // ✅ NEW: وضعیت خوانده‌شدن (تازه ساخته شده، پس معمولاً false هست)
                             isRead: msg.isRead ?? msg.is_read ?? false,
-                            // ✅ NEW: اگه بک‌اند همون replyTo که فرستادیم رو برگردونه، اینجا حفظ می‌شه
-                            // ✅ FIX: اگه بک‌اند replyTo رو echo نکنه، از نسخه‌ی optimistic محلی
-                            // (که قبلاً همین پیام رو با replyTo داشتیم) استفاده کن تا حداقل
-                            // برای خودِ فرستنده پاک نشه
                             replyTo: msg.replyTo || msg.reply_to || exists?.replyTo || null,
                             createdAt: safeDate(msg.createdAt || msg.created_date),
                             isOptimistic: false,
@@ -752,8 +796,6 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ✅ NEW: پین/آن‌پین — هم محلی آپدیت می‌کنه (سریع)، هم به سرور می‌فرسته
-    // تا طرف مقابل هم همون لحظه ببینه (فقط real-time، تو رفرش پاک می‌شه)
     togglePinMessage: (messageId) => {
         const {socket, pinnedMessageId} = get();
         const willBePinned = pinnedMessageId !== messageId;
@@ -764,7 +806,6 @@ export const useChatStore = create((set, get) => ({
         }
     },
 
-    // ✅ NEW: رأی دادن به نظرسنجی (چت خصوصی)
     votePoll: (messageId, optionId) => {
         const {socket} = get();
         if (!socket || socket.readyState !== WebSocket.OPEN) return;

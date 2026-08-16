@@ -1,0 +1,160 @@
+services:
+
+  # ============================================================
+  # PostgreSQL
+  # ============================================================
+
+  db:
+    image: postgres:16-alpine
+    container_name: db-stage
+
+    environment:
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: default_database
+
+    volumes:
+      - ./postgres/stage-data:/var/lib/postgresql/data
+
+    expose:
+      - "5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U username -d default_database"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    restart: always
+
+
+  # ============================================================
+  # Redis
+  # ============================================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-stage
+
+    expose:
+      - "6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    restart: always
+
+
+  # ============================================================
+  # Django / Daphne
+  # ============================================================
+
+  backend:
+    build:
+      context: .
+      dockerfile: ./dockerfiles/stage/Dockerfile
+
+    container_name: backend-stage
+
+    working_dir: /usr/src/app
+
+    volumes:
+      - ./core:/usr/src/app
+      - staticfiles:/usr/src/app/staticfiles
+      - media:/usr/src/app/media
+
+    environment:
+      PG_USER: username
+      PG_PASSWORD: password
+      PG_NAME: default_database
+      PG_HOST: db
+      PG_PORT: 5432
+
+      DEBUG: "False"
+
+      REDIS_URL: redis://redis:6379/0
+
+      DJANGO_SETTINGS_MODULE: core.settings
+
+    expose:
+      - "8000"
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
+      daphne
+      -b 0.0.0.0
+      -p 8000
+      core.asgi:application
+      "
+
+    restart: always
+
+
+  # ============================================================
+  # React Frontend
+  # ============================================================
+
+  frontend:
+    build:
+      context: ./chatify/frontend
+      dockerfile: Dockerfile
+
+    container_name: frontend-stage
+
+    expose:
+      - "80"
+
+    restart: always
+
+
+  # ============================================================
+  # Nginx
+  # ============================================================
+
+  nginx:
+    image: nginx:alpine
+
+    container_name: nginx-stage
+
+    ports:
+      - "80:80"
+
+    volumes:
+
+      # Nginx Config
+      - ./dockerfiles/nginx:/etc/nginx/conf.d:ro
+
+      # Django Static
+      - staticfiles:/usr/src/app/staticfiles:ro
+
+      # Django Media
+      - media:/usr/src/app/media:ro
+
+    depends_on:
+      - backend
+      - frontend
+
+    restart: always
+
+
+# ================================================================
+# Docker Volumes
+# ================================================================
+
+volumes:
+
+  staticfiles:
+
+  media:
