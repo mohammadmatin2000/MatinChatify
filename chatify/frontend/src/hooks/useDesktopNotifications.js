@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useSettingsStore } from "../store/useSettingsStore";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 export default function useDesktopNotifications() {
     const settingsRef = useRef(useSettingsStore.getState());

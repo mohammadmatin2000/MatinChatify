@@ -5,6 +5,7 @@ import {createPortal} from "react-dom";
 import CameraCaptureModal from "./CameraCaptureModal";
 import toast from "react-hot-toast";
 import useTranslation from "../hooks/useTranslation";
+import { API_URL } from "../lib/apiConfig";
 
 function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelectLocation, onSelectContact, onSelectPoll}) {
     const { t } = useTranslation();
@@ -234,7 +235,7 @@ function AttachMenu({onSelectGallery, onSelectCamera, onSelectDocument, onSelect
                                         : c.raw?.profile?.startsWith("http")
                                             ? c.raw.profile
                                             : c.raw?.profile
-                                                ? `http://localhost:8000${c.raw.profile}`
+                                                ? `${API_URL}${c.raw.profile}`
                                                 : "/avatar.png";
                                     return (
                                         <button

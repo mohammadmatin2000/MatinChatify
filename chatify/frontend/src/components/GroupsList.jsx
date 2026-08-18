@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import { useChannelStore } from "../store/useChannelStore";
 import useTranslation from "../hooks/useTranslation";
+import { API_URL } from "../lib/apiConfig";
 
 function GroupsList({ searchQuery = "" }) {
   const [groups, setGroups] = useState([]);
@@ -20,7 +21,7 @@ function GroupsList({ searchQuery = "" }) {
   useEffect(() => {
     const fetchGroups = async () => {
       try {
-        const res = await axios.get("http://localhost:8000/groups/groups/", {
+        const res = await axios.get(`${API_URL}/groups/groups/`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         setGroups(Array.isArray(res.data) ? res.data : []);
@@ -53,7 +54,7 @@ function GroupsList({ searchQuery = "" }) {
       setConfirmDeleteId(null);
 
       try {
-        await axios.delete(`http://localhost:8000/groups/groups/${groupId}/`, {
+        await axios.delete(`${API_URL}/groups/groups/${groupId}/`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         setGroups((prev) => prev.filter((g) => g.id !== groupId));
@@ -97,7 +98,7 @@ function GroupsList({ searchQuery = "" }) {
         const groupAvatarUrl = g.avatar
           ? g.avatar.startsWith("http")
             ? g.avatar
-            : `http://localhost:8000${g.avatar}`
+            : `${API_URL}${g.avatar}`
           : null;
 
         const memberCount = typeof g.members_count === "number" ? g.members_count : g.members?.length || 0;

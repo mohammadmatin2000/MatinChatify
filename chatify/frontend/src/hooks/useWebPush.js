@@ -1,4 +1,5 @@
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 const VAPID_PUBLIC_KEY = "همون Public Key که از web-push generate-vapid-keys گرفتی";
 
 function urlBase64ToUint8Array(base64String) {

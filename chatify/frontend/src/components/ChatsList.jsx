@@ -8,6 +8,7 @@ import useTranslation from "../hooks/useTranslation";
 import { formatDistanceToNowStrict, isToday, format } from "date-fns";
 import { faIR, enUS, de } from "date-fns/locale";
 import { ImageIcon, Trash2, Paperclip, MapPin, User as UserIcon, Phone } from "lucide-react";
+import { API_URL } from "../lib/apiConfig";
 
 const DATE_LOCALES = { fa: faIR, en: enUS, de };
 
@@ -245,7 +246,7 @@ function ChatsList({ searchQuery = "" }) {
         const profilePicUrl = contact.profile?.startsWith("http")
           ? contact.profile
           : contact.profile
-          ? `http://localhost:8000${contact.profile}`
+          ? `${API_URL}${contact.profile}`
           : "/avatar.png";
 
         return (

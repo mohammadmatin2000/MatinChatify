@@ -6,8 +6,8 @@ import useTranslation from "../hooks/useTranslation";
 import toast from "react-hot-toast";
 import { useEffect, useState } from "react";
 import axios from "axios";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 const resolveUrl = (url) => {
   if (!url) return "/avatar.png";

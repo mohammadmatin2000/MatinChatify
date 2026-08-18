@@ -3,8 +3,8 @@ import { Trash2, Radio, LogOut, LogIn } from "lucide-react";
 import { useChannelStore } from "../store/useChannelStore";
 import { useChatStore } from "../store/useChatStore";
 import useTranslation from "../hooks/useTranslation";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 function ChannelsList({ searchQuery = "" }) {
   const { channels, getAllChannels, isChannelsLoading, setSelectedChannel, deleteChannel, leaveChannel, joinChannel } =

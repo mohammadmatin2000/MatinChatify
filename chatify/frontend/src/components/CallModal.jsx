@@ -18,8 +18,8 @@ import { useCallStore } from "../store/useCallStore";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import useTranslation from "../hooks/useTranslation";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 function formatElapsed(totalSeconds) {
   const m = Math.floor(totalSeconds / 60);

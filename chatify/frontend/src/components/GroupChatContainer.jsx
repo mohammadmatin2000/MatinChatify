@@ -31,8 +31,8 @@ import {
 import MessageContextMenu from "./MessageContextMenu";
 import MessageInfoModal from "./MessageInfoModal";
 import ForwardMessageModal from "./ForwardMessageModal";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_BASE_URL}${url}`);
 
 // ✅ NEW: نگاشت گزینه‌ی پس‌زمینه‌ی انتخاب‌شده در تنظیمات به کلاس واقعی Tailwind

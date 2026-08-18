@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import toast from "react-hot-toast";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 export const useChannelStore = create((set, get) => ({
   channels: [],
@@ -141,8 +141,6 @@ export const useChannelStore = create((set, get) => ({
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        // ✅ برای عضو عادی (غیرادمین) بک‌اند ۴۰۳ می‌ده، این یعنی خطا نیست
-        // بلکه محدودیت دسترسیه — پس toast خطا نمی‌ندازیم، فقط لیست خالی می‌مونه
         set({ members: [] });
         return;
       }

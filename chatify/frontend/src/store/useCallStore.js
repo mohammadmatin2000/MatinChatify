@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import axios from "axios";
+import { API_URL, WS_URL } from "../lib/apiConfig";
 
 const ICE_SERVERS = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-const CALL_WS_URL = "ws://localhost:8000/ws/call/";
-const CALL_API_BASE = "http://localhost:8000/call";
+
+
+const CALL_WS_URL = `${WS_URL}/ws/call/`;
+const CALL_API_BASE = `${API_URL}/call`;
 
 function stopStream(stream) {
   if (!stream) return;

@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 import { useChatStore } from "../store/useChatStore";
 import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import useTranslation from "../hooks/useTranslation";
+import { API_URL } from "../lib/apiConfig";
 
 function ContactList({ searchQuery = "" }) {
   const { getAllContacts, allContacts, setSelectedUser, isUsersLoading, onlineUsers, deleteContact } =
@@ -71,7 +72,7 @@ function ContactList({ searchQuery = "" }) {
           : contact.raw?.profile?.startsWith("http")
           ? contact.raw.profile
           : contact.raw?.profile
-          ? `http://localhost:8000${contact.raw.profile}`
+          ? `${API_URL}${contact.raw.profile}`
           : "/avatar.png";
 
         const displayName =

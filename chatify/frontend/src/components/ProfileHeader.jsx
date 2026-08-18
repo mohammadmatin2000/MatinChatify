@@ -50,10 +50,11 @@ import {LANGUAGES} from "../lib/translations";
 import useTranslation from "../hooks/useTranslation";
 import toast from "react-hot-toast";
 import axios from "axios";
-
+import { API_URL } from "../lib/apiConfig";
 
 const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
-const API_BASE_URL = "http://localhost:8000";
+
+const API_BASE_URL = API_URL;
 
 // ============================== کامپوننت سوییچ آی‌اواس‌استایل ==============================
 function ToggleSwitch({checked, onChange, disabled}) {

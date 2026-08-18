@@ -12,8 +12,8 @@ import MessageInfoModal from "./MessageInfoModal";
 import ForwardMessageModal from "./ForwardMessageModal";
 import toast from "react-hot-toast";
 import { FileTextIcon, MapPinIcon, UserIcon, DownloadIcon, XIcon, Pin, Star, CheckIcon, Ban } from "lucide-react";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 const resolveUrl = (url) => (url?.startsWith("http") ? url : `${API_BASE_URL}${url}`);
 

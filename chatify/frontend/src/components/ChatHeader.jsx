@@ -1,5 +1,5 @@
 import { XIcon, PhoneIcon, VideoIcon, ClockIcon, Quote } from "lucide-react";
-
+import { API_URL } from "../lib/apiConfig";
 import { useChatStore } from "../store/useChatStore";
 import { useCallStore } from "../store/useCallStore";
 import ChatHeaderMenu from "./ChatHeaderMenu";
@@ -68,7 +68,7 @@ function ChatHeader() {
     : selectedUser.raw?.profile?.startsWith("http")
     ? selectedUser.raw.profile
     : selectedUser.raw?.profile
-    ? `http://localhost:8000${selectedUser.raw.profile}`
+    ? `${API_URL}${selectedUser.raw.profile}`
     : "/avatar.png";
 
   const isBlockedEitherWay = blockStatus.iBlockedThem || blockStatus.theyBlockedMe;

@@ -1,8 +1,6 @@
 import {create} from "zustand";
 import toast from "react-hot-toast";
 import {useAuthStore} from "./useAuthStore";
-// ✅ FIX: قبلاً "http://localhost:8000" هاردکد بود که فقط وقتی فرانت و
-// بک‌اند رو یه کامپیوتر بودن جواب می‌داد. الان از تنظیمات مرکزی می‌خونه.
 import {API_URL, WS_URL} from "../lib/apiConfig";
 
 const API_BASE_URL = API_URL;

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { translations, formatTranslation, LANGUAGES } from "../lib/translations";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 
 const STORAGE_KEY = "appLanguage";
 

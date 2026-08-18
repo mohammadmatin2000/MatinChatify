@@ -16,8 +16,8 @@ import {
 import { useCallStore } from "../store/useCallStore";
 import { useAuthStore } from "../store/useAuthStore";
 import useTranslation from "../hooks/useTranslation";
-
-const API_BASE_URL = "http://localhost:8000";
+import { API_URL } from "../lib/apiConfig";
+const API_BASE_URL = API_URL;
 const resolveAvatar = (img) => {
   if (!img) return "/avatar.png";
   return img.startsWith("http") ? img : `${API_BASE_URL}${img}`;

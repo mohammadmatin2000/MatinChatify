@@ -1,5 +1,4 @@
 import { create } from "zustand";
-// ✅ FIX: قبلاً "http://localhost:8000" هاردکد بود. الان از تنظیمات مرکزی می‌خونه.
 import { API_URL } from "../lib/apiConfig";
 
 const STORAGE_KEY = "chatify_settings";
