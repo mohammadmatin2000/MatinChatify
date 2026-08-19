@@ -1,23 +1,35 @@
+# ماژول اصلی ادمین جنگو برای ثبت مدل‌ها و ساخت رابط مدیریتی
 from django.contrib import admin
+
+# کلاس پایه‌ی مدیریت کاربر که جنگو به‌صورت پیش‌فرض برای مدل User ارائه می‌ده
+# ما این کلاس رو ارث‌بری می‌کنیم و طبق نیاز پروژه سفارشی‌سازی می‌کنیم
 from django.contrib.auth.admin import UserAdmin
+
+# مدل Session که جنگو برای مدیریت نشست‌های لاگین‌شده‌ی کاربران استفاده می‌کنه
 from django.contrib.sessions.models import Session
+
+# مدل‌های سفارشی پروژه که داخل همین اپ (accounts) تعریف شدن
 from .models import User, Profile
 # ======================================================================================================================
+# کلاس مدیریت سفارشی برای مدل User
+# این کلاس نحوه‌ی نمایش، فیلتر کردن، جستجو و ویرایش کاربران رو در پنل ادمین جنگو تعیین می‌کنه
+# ======================================================================================================================
 class CustomUserAdmin(UserAdmin):
-    model = User  # Specifies the model that this admin class is based on
+    # مدلی که این کلاس ادمین بهش مربوط می‌شه
+    model = User
 
-    # Defines the fields displayed in the admin panel list view
+    # ستون‌هایی که در صفحه‌ی لیست کاربران (لیست اصلی پنل ادمین) نمایش داده می‌شن
     list_display = (
-        "id",
-        "email",
-        "phone_number",
-        "is_staff",
-        "is_superuser",
-        "is_active",
-        "is_verified",
+        "id",              # شناسه‌ی یکتای کاربر
+        "email",           # ایمیل کاربر
+        "phone_number",    # شماره تلفن کاربر
+        "is_staff",        # آیا کاربر دسترسی به پنل ادمین داره یا نه
+        "is_superuser",    # آیا کاربر ادمین کل (سوپریوزر) هست یا نه
+        "is_active",       # آیا اکانت کاربر فعاله یا نه (غیرفعال = مسدود/حذف نرم)
+        "is_verified",     # آیا کاربر احراز هویت (تایید ایمیل/شماره) شده یا نه
     )
 
-    # Fields used for filtering results in the admin panel
+    # فیلدهایی که با استفاده از اون‌ها می‌شه لیست کاربران رو فیلتر کرد (سایدبار سمت راست پنل)
     list_filter = (
         "is_staff",
         "is_superuser",
@@ -25,18 +37,23 @@ class CustomUserAdmin(UserAdmin):
         "is_verified",
     )
 
-    # Fields used for searching users in the admin panel
+    # فیلدهایی که جستجوی متنی پنل ادمین روی اون‌ها انجام می‌شه
     search_fields = ("email", "phone_number")
 
-    # Orders the results by id (چون email و phone_number هر دو می‌تونن null باشن، مرتب‌سازی روشون خطا/بی‌نظمی می‌ده)
+    # ترتیب پیش‌فرض نمایش لیست کاربران
+    # نکته: مرتب‌سازی بر اساس id انجام می‌شه، نه email یا phone_number،
+    # چون این دو فیلد می‌تونن مقدار null داشته باشن و مرتب‌سازی روی فیلد nullable
+    # ممکنه باعث ترتیب نامنظم یا خطا بشه
     ordering = ("id",)
 
-    # Defines how the user details are grouped and displayed in the admin panel
+    # نحوه‌ی گروه‌بندی و نمایش فیلدها در صفحه‌ی جزئیات/ویرایش یک کاربر
     fieldsets = (
+        # بخش اول: اطلاعات احراز هویت کاربر
         (
             "Authentication",
             {"fields": ("email", "phone_number", "password")},
         ),
+        # بخش دوم: سطوح دسترسی و وضعیت کاربر
         (
             "Permissions",
             {
@@ -45,48 +62,65 @@ class CustomUserAdmin(UserAdmin):
                     "is_superuser",
                     "is_active",
                     "is_verified",
-                    "type",
+                    "type",  # نوع/نقش کاربر (فیلد سفارشی مدل)
                 )
             },
         ),
+        # بخش سوم: گروه‌ها و مجوزهای اختصاصی کاربر
         (
             "Group Permissions",
             {"fields": ("groups", "user_permissions")},
         ),
+        # بخش چهارم: تاریخ آخرین ورود کاربر
         (
             "Important Date",
             {"fields": ("last_login",)},
         ),
     )
 
-    # Configuration for adding a new user from the admin panel
+    # تنظیمات فرم «افزودن کاربر جدید» از داخل پنل ادمین
+    # این فرم جدا از fieldsets بالاست چون هنگام ساخت کاربر جدید
+    # به دو فیلد رمز عبور (تایید رمز) نیاز داریم، نه یک فیلد password ساده
     add_fieldsets = (
         (
             None,
             {
-                "classes": ("wide",),  # Styling applied to the form
+                "classes": ("wide",),  # استایل عریض برای نمایش بهتر فرم
                 "fields": (
                     "email",
                     "phone_number",
-                    "password1",
-                    "password2",
-                    "is_staff",  # Required fields for creating a new user
-                    "is_active",
+                    "password1",   # فیلد وارد کردن رمز عبور
+                    "password2",   # فیلد تکرار رمز عبور جهت تایید
+                    "is_staff",    # دسترسی ادمین (در زمان ساخت کاربر قابل تنظیم)
+                    "is_active",   # وضعیت فعال بودن کاربر
                     "is_superuser",
                 ),
             },
         ),
     )
 # ======================================================================================================================
+# کلاس مدیریت سفارشی برای مدل Session
+# هدف این کلاس اینه که محتوای رمزگشایی‌شده‌ی نشست‌ها هم در پنل ادمین قابل مشاهده باشه
+# (به‌صورت پیش‌فرض جنگو فقط session_key رمزگذاری‌شده رو نشون می‌ده که قابل خوندن نیست)
+# ======================================================================================================================
 class SessionAdmin(admin.ModelAdmin):
+    # این متد داده‌ی خام و رمزگذاری‌شده‌ی نشست رو رمزگشایی و قابل‌خوندن می‌کنه
     def _session_data(self, obj):
         return obj.get_decoded()
 
+    # ستون‌هایی که برای هر نشست در لیست پنل ادمین نمایش داده می‌شن
     list_display = ["session_key", "_session_data", "expire_date"]
+
+
 # ======================================================================================================================
+# ثبت مدل‌ها در پنل ادمین جنگو به همراه کلاس‌های مدیریتی سفارشی‌شون
+# ======================================================================================================================
+
+# ثبت مدل User با استفاده از کلاس مدیریت سفارشی CustomUserAdmin
 admin.site.register(User, CustomUserAdmin)
 
+# ثبت مدل Profile با تنظیمات پیش‌فرض ادمین (بدون سفارشی‌سازی خاص)
 admin.site.register(Profile)
 
+# ثبت مدل Session با استفاده از کلاس مدیریت سفارشی SessionAdmin
 admin.site.register(Session, SessionAdmin)
-# ======================================================================================================================
